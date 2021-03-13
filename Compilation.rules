@@ -1,4 +1,4 @@
-最初
+XXX header
 function abort(msg){
   print "error 1 " msg;
   exit(0);
@@ -42,15 +42,15 @@ BEGIN{
   main(0);
 }
 
-ファイル名最初
+XXX filename header
 function main(id,  heap){
   heap=empty;
   ssize[id]=0;
 
-ファイル名最後
+XXX filename footer
 }
 
-中身最初
+XXX content header
 function sub(id,  heap){
   heap=empty;
   ssize[id]=0;
@@ -59,7 +59,7 @@ function sub(id,  heap){
     ssize[id]++;
   }
 
-中身最後
+XXX content footer
   for(i=0;i<ssize[id];i++){
     stack[(id-1),ssize[id-1]]=stack[id,i];
     ssize[id-1]++;
@@ -68,7 +68,7 @@ function sub(id,  heap){
   delete ssize[id];
 }
 
-リテラルただし&はデシマル
+l litetal. ampersant is decimal.
   stack[id,ssize[id]]=&;
   ssize[id]++;
 
@@ -86,21 +86,21 @@ function sub(id,  heap){
     ssize[id]--;
   }
 
-.n ただし数値生成は後回し
+.n BUT let numerical output be done later.
   if((sz=ssize[id])>0){
     print "num",stack[id,(sz-1)];
     delete stack[id,(sz-1)];
     ssize[id]--;
   }
 
-.n ただし外部生成
+.n BUT depends on externals.
   if((sz=ssize[id])>0){
     printf"%d",stack[id,(sz-1)] | "od -An -vtu1|tr -Cs 0123456789 \\[\\\\n\\*\\]|grep .";
     delete stack[id,(sz-1)];
     ssize[id]--;
   }
 
-.n ただし外部なし生成
+.n BUT generate by myself.
   if((sz=ssize[id])>0){
     nm=stack[id,sz];
     if(nm<0){
@@ -129,7 +129,7 @@ function sub(id,  heap){
   $0="";
   ssize[id]++;
 
-._ ただしプラス符号ありかも
+._ BUT may accepts sign.
   forceflush();
   for(;;){
     if($0=="")
@@ -187,9 +187,7 @@ function sub(id,  heap){
     stack[id,(sz-i-1)]=sw;
   }
 
-.fはリテラル同様でよくね?
-
-.f を真面目に
+.f BUT seriously.
   dotf(id);
 
 .e
@@ -259,10 +257,10 @@ function sub(id,  heap){
     ssize[id]++;
   }
 
-.d ただしファイル名
+.d BUT filename.
   return;
 
-.d ただし中身
+.d BUT contents.
   for(i=0;i<ssize[id];i++){
     stack[(id-1),ssize[id-1]]=stack[id,i];
     ssize[id-1]++;
