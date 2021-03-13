@@ -1,0 +1,132 @@
+#!/bin/sh
+
+# pxemx.posixism --- Execute compiled Pxem program.
+# Written by TpaeFawzen.
+# License. CC0.
+
+set -eu # -e is for syntax error
+umask 0022
+export LC_ALL=C
+type getconf >/dev/null 2>&1 &&
+type command >/dev/null 2>&1 &&
+export PATH="$(command -p getconf PATH)${PATH+:}${PATH-}"
+export UNIX_STD=2003 # for HP-UX
+export POSIXLY_CORRECT=1 # for GNU utils, bash, pdksh
+case "${BASH_VERSION:+y}" in (y)
+  set -o posix
+  set +B # disable echo {a,s,d} to be echo a s d
+;;esac
+case "${ZSH_VERSION:+y}" in (y)
+  emulate sh
+  setopt shwordsplit
+  alias -g '${1+"$@"}'='"$@"'
+  NULLCMD=:
+;;esac
+# reject svr2 bourne
+case "$(
+  ( set dummy; shift; set dummy "$@"; shift; echo $# )
+)" in (1)
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+;;esac
+# reject svr4 bourne
+eval "! false" || {
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+}
+
+usagex(){
+  printf %s\\n "Usage: ${0##*/} FILE" 1>&2
+  exit 1
+}
+
+case "$# ${1:+$1}" in ('1 -?'|'1 -h'|'1 --help')
+  usagex
+;;esac
+while case "$#" in (0) ! :;; (*) :;; esac; do
+  case "$1" in (--) shift; break;; esac
+  case "$1" in (-*) usagex;; esac
+  break
+done
+case "$#" in ([!1]*|1?*) usagex;; esac
+
+errorx(){
+  printf %s\\n "${0##*/}: $2"
+  exit $1
+}
+case "$1" in ('')
+  errorx 1 'Filename cannot be empty'
+;;(-*)
+  set -- "./$1"
+;;esac
+
+# main
+
+# load subprogram
+(
+  awk \
+    -v flushat="$(
+      echo $((
+        "$(getconf ARG_MAX 2>&1 || echo 2048)"
+        - 9
+      ))
+    )" \
+    -v getter="head -n1|od -An -vtu1|tr -Cs 0123456789 '[ *]'|grep .|sed -e 's/^ *//x -e 's/ *$//'" \
+    -v randseed="$(
+      test -c /dev/urandom && test -r /dev/urandom && {
+        od -An -vtd4 -N4 /dev/urandom | tr -Cs 0123456789
+      } || {
+      }
+    )" \
+    -f "$1" ||
+  echo 'error 2 load failed'
+) |
+# parse output
+# one of these:
+# /^-?[0-9]+$/, /^error [0-9]+ .*$/, /^flush$/
+awk \
+  -v maxlen= \
+'
+BEGIN{
+  ORS="";
+  during_output=0;
+  header="printf "'"'"'";
+  footer=sprintf("'"'"'\n");
+  errftr=sprintf("\n"'"'"' 1>&2\n");
+}
+/^flush$/&&during_output==1{
+  print footer;
+  during_output=0;
+  next;
+}
+/^error/{
+  if(during_output) print footer;
+  during_output=0;
+  print header;
+  print$3;
+  for(i=4;i<=NF;i++){
+    print OFS $4;
+  }
+  print errftr;
+  printf "exit %u\n", $2;
+  exit $2;
+}
+/^-?[0-9]$/{
+  if(!during_output){
+    print header;
+    during_output=1;
+  }
+  printf "\\o",$0;
+  next;
+}
+{
+  # HOW?
+  printf"wtf\n" | "cat 1>&2";
+  exit 33;
+}
+END{
+  if(during_output) print footer;
+}
+' |
+# output (and error handling) here
+sh -s
