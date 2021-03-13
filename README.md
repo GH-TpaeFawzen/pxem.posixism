@@ -26,8 +26,14 @@ pxemc.posixism /path/to/pxem/program > a.awk \
 ```
 
 The Pxem program file has to be a regular file 
-with readable permission. The program is assumed 
-to be written in ASCII-compatible encoding.
+with readable permission (if and only if your
+file name contains one of these commands: `.f`, 
+`.e`; otherwise the existence of file is not 
+checked). The program is assumed to be written 
+in ASCII-compatible encoding. Additionally, the 
+command substrings are case-insensitive; two 
+programs such as `hi.p` and `hi.P` are 
+semantically same.
 
 The compiled program assumes that you are using 
 POSIX-compatible locale: the `._` command, which 
