@@ -141,9 +141,11 @@ BEGIN{
   literal=(literal=="")?$0:($0 " " literal);
 }
 iscmd(uncapital($0))&&prev0==dot{
-  sub("^[^ ]* [^ ]* ","",literal);
-  if(literal~/./)
-    print "l " literal;
+  if(literal!~"^[^ ]* [^ ]*$"){
+    sub("^[^ ]* [^ ]* ","",literal);
+    if(literal~/./)
+      print "l " literal;
+  }
   printf "%c\n",uncapital($0);
   literal="";
 }
@@ -218,7 +220,7 @@ print \
 "  }";
   next;
 }
-$0==".i"{
+$0=="i"{
 print \
 "  forceflush();\n" \
 "  sz=ssize[id];\n" \
@@ -515,9 +517,11 @@ BEGIN{
   literal=(literal=="")?$0:($0 " " literal);
 }
 iscmd(uncapital($0))&&prev0==dot{
-  sub("^[^ ]* [^ ]* ","",literal);
-  if(literal~/./)
-    print "l " literal;
+  if(literal!~"^[^ ]* [^ ]*$"){
+    sub("^[^ ]* [^ ]* ","",literal);
+    if(literal~/./)
+      print "l " literal;
+  }
   printf "%c\n",uncapital($0);
   literal="";
 }
@@ -592,7 +596,7 @@ print \
 "  }";
   next;
 }
-$0==".i"{
+$0=="i"{
 print \
 "  forceflush();\n" \
 "  sz=ssize[id];\n" \
