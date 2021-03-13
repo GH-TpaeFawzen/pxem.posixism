@@ -71,6 +71,7 @@ function abort(msg){
 }
 function gets(  ret,c){
   if(ibuffer==""){
+    forceflush();
     ret=(getter | getline ibuffer);
     if(ret<=0) return ret;
     close(getter);
@@ -217,7 +218,6 @@ print \
 }
 $0=="i"{
 print \
-"  forceflush();\n" \
 "  sz=ssize[id];\n" \
 "  if(dollar0!=\"\")\n" \
 "    stack[id,sz]=dollar0;\n" \
@@ -231,7 +231,6 @@ print \
 }
 $0=="_"{
 print \
-"  forceflush();\n" \
 "  for(;;){\n" \
 "    if(dollar0==\"\")\n" \
 "      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
