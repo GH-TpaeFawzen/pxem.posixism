@@ -5,6 +5,7 @@ function abort(msg){
 }
 function gets(  ret,c){
   if(ibuffer==""){
+    forceflush();
     ret=(getter | getline ibuffer);
     if(ret<=0) return ret;
     close(getter);
@@ -121,7 +122,6 @@ function sub(id,  heap){
   }
 
 .i
-  forceflush();
   sz=ssize[id];
   if(dollar0!="")
     stack[id,sz]=dollar0;
@@ -133,7 +133,6 @@ function sub(id,  heap){
   ssize[id]++;
 
 ._ただしプラス符号ありかも
-  forceflush();
   for(;;){
     if(dollar0=="")
       if(gets() <=0) abort("._: unexpected EOF");
