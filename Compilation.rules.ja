@@ -5,14 +5,18 @@ function abort(msg){
 }
 function gets(  ret,c){
   if(ibuffer==""){
-    ret=(getter | getline);
+    ret=(getter | getline ibuffer);
     if(ret<=0) return ret;
-    ibuffer=dollar0;
-    close(getter)b
+    close(getter);
   }
   c=ibuffer;
-  sub(" .*$","",c);
-  sub("^[ ]* ","",ibuffer);
+  if(c!~" "){
+    ibuffer="";
+  }
+  else{
+    sub(" .*$","",c);
+    sub("[^ ]* ","",ibuffer);
+  }
   dollar0=c;
   return 1;
 }
