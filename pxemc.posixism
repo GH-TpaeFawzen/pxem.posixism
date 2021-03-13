@@ -63,7 +63,7 @@ case "$1" in ('')
 # 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
 
 # main
-# generate a subprogram fron now
+# generate a subprogram from now
 cat <<-'1sthdr'
 function abort(msg){
   print "error 1 " msg;
