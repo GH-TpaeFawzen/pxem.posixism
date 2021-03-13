@@ -1,6 +1,6 @@
 #!/bin/sh
 
-# pxemx.posixism --- Execute compiled Pxem program.
+# pxemx.posixism. Execute compiled Pxem program.
 # Written by TpaeFawzen.
 # License. CC0.
 
@@ -66,58 +66,79 @@ case "$1" in ('')
 (
   awk \
     -v flushat="$(
-      echo $((
-        "$(getconf ARG_MAX 2>&1 || echo 2048)"
-        - 9
+      echo $(( \
+        $(getconf ARG_MAX 2>&1 || echo 2048) \
+        - 9 \
       ))
     )" \
-    -v getter="head -n1|od -An -vtu1|tr -Cs 0123456789 '[ *]'|grep .|sed -e 's/^ *//x -e 's/ *$//'" \
+    -v getter="head -n1|od -An -vtu1|tr -Cs 0123456789 '[ *]'|grep .|sed -e 's/^ *//' -e 's/ *$//'" \
     -v randseed="$(
       test -c /dev/urandom && test -r /dev/urandom && {
-        od -An -vtd4 -N4 /dev/urandom | tr -Cs 0123456789
+        od -A n -t d4 -N 4 -v /dev/urandom |
+        tr -Cd 0123456789-
       } || {
+        (ps -Ao pid,etime,pcpu,vsz; date) |
+        od -A n -t u4 -v |
+        tr -Cs 0123456789 '[\n*]' |
+        grep . |
+        tail -n 42 |
+        sed '
+          1i\
+''''''''''-2147483648
+          s/.*\(.\{8\}\)$/\1/
+        ' |
+        awk -v a=0 '
+          {a+=$0;}
+          END{print a;}
+        '
       }
     )" \
     -f "$1" ||
   echo 'error 2 load failed'
-) |
+) | 
+grep . |
 # parse output
 # one of these:
 # /^-?[0-9]+$/, /^error [0-9]+ .*$/, /^flush$/
 awk \
-  -v maxlen= \
+  -v maxlen="$(
+    echo $(( \
+      $(getconf ARG_MAX 2>&1 || echo 2048) \
+      - 9 \
+    ))
+  )" \
+  -v header="printf '" \
+  -v footer="'" \
+  -v errftr="' 1>&2" \
 '
 BEGIN{
   ORS="";
+  LF=sprintf("\n");
   during_output=0;
-  header="printf "'"'"'";
-  footer=sprintf("'"'"'\n");
-  errftr=sprintf("\n"'"'"' 1>&2\n");
 }
 /^flush$/{
   if(during_output==1)
-    print footer;
+    print footer LF;
   during_output=0;
   next;
 }
 /^error/{
-  if(during_output) print footer;
+  if(during_output) print footer LF;
   during_output=0;
-  print header;
-  print$3;
+  print$3|"cat 1>&2";
   for(i=4;i<=NF;i++){
-    print OFS $i;
+    print OFS $i|"cat 1>&2";
   }
-  print errftr;
+  print LF|"cat 1>&2";
   printf "exit %u\n", $2;
   exit $2;
 }
-/^-?[0-9]$/{
+/^-?[0-9]+$/{
   if(!during_output){
     print header;
     during_output=1;
   }
-  printf "\\o",$0;
+  printf "\\%o",$0;
   next;
 }
 {
