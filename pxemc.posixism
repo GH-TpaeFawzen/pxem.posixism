@@ -71,15 +71,15 @@ function abort(msg){
 }
 function gets(  ret,c){
   if(ibuffer==""){
-    ret=(getter | getline);
+    ret=(getter | getline dollar0);
     if(ret<=0) return ret;
-    ibuffer=$0;
+    ibuffer=dollar0;
     close(getter)b
   }
   c=ibuffer;
   sub(" .*$","",c);
   sub("^[ ]* ","",ibuffer);
-  $0=c;
+  dollar0=c;
   return 1;
 }
 function maybeflush(){
@@ -100,7 +100,7 @@ BEGIN{
   empty="empty";
   flush="flush";
   flushstep=0;
-  $0="";
+  dollar0="";
   split("",stack,":");
   split("",ssize,":");
   srand(randseed);
@@ -196,18 +196,17 @@ print \
 $0=="n"{
 print \
 "  if((sz=ssize[id])>0){\n" \
-"    nm=stack[id,sz];\n" \
+"    nm=stack[id,(sz-1)];\n" \
 "    if(nm<0){\n" \
 "      print 45;\n" \
 "      nm*=-1;\n" \
 "    }\n" \
 "    os=48+int(nm%10);\n" \
 "    for(nm=int(nm/10);nm>0;nm=int(nm/10)){\n" \
-"      os=48+int(nm%10) ORS os;\n" \
+"      os=48+int(nm%10) sprintf(\"\\n\") os;\n" \
 "    }\n" \
 "    print os;\n" \
-"    delete\n" \
-"    delete stack[id,(sz-1)],os;\n" \
+"    delete stack[id,(sz-1)];\n" \
 "    ssize[id]--;\n" \
 "  }";
   next;
@@ -216,13 +215,13 @@ $0=="i"{
 print \
 "  forceflush();\n" \
 "  sz=ssize[id];\n" \
-"  if($0!=\"\")\n" \
-"    stack[id,sz]=$0;\n" \
+"  if(dollar0!=\"\")\n" \
+"    stack[id,sz]=dollar0;\n" \
 "  else if(gets() >0)\n" \
-"    stack[id,sz]=$0;\n" \
+"    stack[id,sz]=dollar0;\n" \
 "  else\n" \
 "    stack[id,sz]=-1;\n" \
-"  $0=\"\";\n" \
+"  dollar0=\"\";\n" \
 "  ssize[id]++;";
   next;
 }
@@ -230,34 +229,34 @@ $0=="_"{
 print \
 "  forceflush();\n" \
 "  for(;;){\n" \
-"    if($0==\"\")\n" \
+"    if(dollar0==\"\")\n" \
 "      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
-"    if(isblank($0)){\n" \
+"    if(isblank(dollar0)){\n" \
 "      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
 "      continue;\n" \
 "    }\n" \
-"    if($0==43){\n" \
+"    if(dollar0==43){\n" \
 "      sg=1;\n" \
 "      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
 "      break;\n" \
 "    }\n" \
-"    if($0==45){\n" \
+"    if(dollar0==45){\n" \
 "      sg=-1;\n" \
 "      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
 "      break;\n" \
 "    }\n" \
-"    if(48<=$0&&$0<58){\n" \
+"    if(48<=dollar0&&dollar0<58){\n" \
 "      sg=1;\n" \
 "      break;\n" \
 "    }\n" \
 "    abort(\"._: input not integer\");\n" \
 "  }\n" \
-"  if(48<=$0&&$0<58) dv=$0-48;\n" \
+"  if(48<=dollar0&&dollar0<58) dv=dollar0-48;\n" \
 "  else abort(\"._: input is not integer\");\n" \
 "  for(;;){\n" \
 "    if(gets() <=0) break;\n" \
-"    if(48<=$0&&$0<58){\n" \
-"      dv=dv*10+($0-48);\n" \
+"    if(48<=dollar0&&dollar0<58){\n" \
+"      dv=dv*10+(dollar0-48);\n" \
 "      continue;\n" \
 "    }\n" \
 "    break;\n" \
@@ -329,7 +328,8 @@ print \
 "    maybeflush();\n" \
 "    if((sz=ssize[id])>=2){\n" \
 "      xb=!(stack[id,(sz-1)]<stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      delete stack[id,(sz-1)];\n" \
+"      delete stack[id,(sz-2)];\n" \
 "      ssize[id]-=2;\n" \
 "      if(xb) break;\n" \
 "    }";
@@ -341,7 +341,8 @@ print \
 "    maybeflush();\n" \
 "    if((sz=ssize[id])>=2){\n" \
 "      yb=!(stack[id,(sz-1)]>stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      delete stack[id,(sz-1)];\n" \
+"      delete stack[id,(sz-2)];\n" \
 "      ssize[id]-=2;\n" \
 "      if(yb) break;\n" \
 "    }";
@@ -353,7 +354,8 @@ print \
 "    maybeflush();\n" \
 "    if((sz=ssize[id])>=2){\n" \
 "      zb=(stack[id,(sz-1)]==stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      delete stack[id,(sz-1)];\n" \
+"      delete stack[id,(sz-2)];\n" \
 "      ssize[id]-=2;\n" \
 "      if(zb) break;\n" \
 "    }";
