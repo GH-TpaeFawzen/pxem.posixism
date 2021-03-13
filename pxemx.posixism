@@ -106,7 +106,7 @@ BEGIN{
   print header;
   print$3;
   for(i=4;i<=NF;i++){
-    print OFS $4;
+    print OFS $i;
   }
   print errftr;
   printf "exit %u\n", $2;
