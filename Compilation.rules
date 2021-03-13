@@ -1,0 +1,315 @@
+最初
+function abort(msg){
+  print "error 1 " msg;
+  exit(0);
+}
+function gets(  ret,c){
+  if(ibuffer==""){
+    ret=(getter | getline);
+    if(ret<=0) return ret;
+    ibuffer=$0;
+    close(getter)b
+  }
+  c=ibuffer;
+  sub(" .*$","",c);
+  sub("^[ ]* ","",ibuffer);
+  $0=c;
+  return 1;
+}
+function maybeflush(){
+  flushstep++;
+  if(flushstep>=flushat){
+    print flush;
+    flushstep=0;
+  }
+}
+function forceflush(){
+  print flush;
+  flushstep=0;
+}
+function isblank(c){
+  return c==32||(9<=c&&c<=13);
+}
+BEGIN{
+  ibuffer="";
+  empty="empty";
+  flush="flush";
+  flushstep=0;
+  $0="";
+  split("",stack,":");
+  split("",ssize,":");
+  srand(randseed);
+  main(0);
+}
+
+ファイル名最初
+function main(id,  heap){
+  heap=empty;
+  ssize[id]=0;
+
+ファイル名最後
+}
+
+中身最初
+function sub(id,  heap){
+  heap=empty;
+  ssize[id]=0;
+  for(i=0;i<ssize[(id-1)];i++){
+    stack[id,i]=stack[(id-1),i];
+    ssize[id]++;
+  }
+
+中身最後
+  for(i=0;i<ssize[id];i++){
+    stack[(id-1),ssize[id-1]]=stack[id,i];
+    ssize[id-1]++;
+    delete stack[id,i];
+  }
+  delete ssize[id];
+}
+
+リテラルただし&はデシマル
+  stack[id,ssize[id]]=&;
+  ssize[id]++;
+
+.p
+  for(i=ssize[id]-1;i>=0;i--){
+    print stack[id,i];
+    delete stack[id,i];
+  }
+  ssize[id]=0;
+
+.o
+  if((sz=ssize[id])>0){
+    print stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.n ただし数値生成は後回し
+  if((sz=ssize[id])>0){
+    print "num",stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.n ただし外部生成
+  if((sz=ssize[id])>0){
+    printf"%d",stack[id,(sz-1)] | "od -An -vtu1|tr -Cs 0123456789 \\[\\\\n\\*\\]|grep .";
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.n ただし外部なし生成
+  if((sz=ssize[id])>0){
+    nm=stack[id,sz];
+    if(nm<0){
+      print 45;
+      nm*=-1;
+    }
+    os=48+int(nm%10);
+    for(nm=int(nm/10);nm>0;nm=int(nm/10)){
+      os=48+int(nm%10) ORS os;
+    }
+    print os;
+    delete
+    delete stack[id,(sz-1)],os;
+    ssize[id]--;
+  }
+
+.i
+  forceflush();
+  sz=ssize[id];
+  if($0!="")
+    stack[id,sz]=$0;
+  else if(gets() >0)
+    stack[id,sz]=$0;
+  else
+    stack[id,sz]=-1;
+  $0="";
+  ssize[id]++;
+
+._ ただしプラス符号ありかも
+  forceflush();
+  for(;;){
+    if($0=="")
+      if(gets() <=0) abort("._: unexpected EOF");
+    if(isblank($0)){
+      if(gets() <=0) abort("._: unexpected EOF");
+      continue;
+    }
+    if($0==43){
+      sg=1;
+      if(gets() <=0) abort("._: unexpected EOF");
+      break;
+    }
+    if($0==45){
+      sg=-1;
+      if(gets() <=0) abort("._: unexpected EOF");
+      break;
+    }
+    if(48<=$0&&$0<58){
+      sg=1;
+      break;
+    }
+    abort("._: input not integer");
+  }
+  if(48<=$0&&$0<58) dv=$0-48;
+  else abort("._: input is not integer");
+  for(;;){
+    if(gets() <=0) break;
+    if(48<=$0&&$0<58){
+      dv=dv*10+($0-48);
+      continue;
+    }
+    break;
+  }
+  stack[id,ssize[id]]=sg*dv;
+  ssize[id]++;
+
+.c
+  if((sz=ssize[id])>0){
+    stack[id,sz]=stack[id,(sz-1)];
+    ssize[id]++;
+  }
+
+.s
+  if((sz=ssize[id])>0){
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.v
+  sz=ssize[id];
+  for(i=0;i<int(sz/2);i++){
+    sw=stack[id,i];
+    stack[id,i]=stack[id,(sz-i-1)];
+    stack[id,(sz-i-1)]=sw;
+  }
+
+.fはリテラル同様でよくね?
+
+.f を真面目に
+  dotf(id);
+
+.e
+  maybeflush();
+  sub(id+1);
+
+.r
+  if((sz=ssize[id])>0){
+    if((tp=stack[id,(sz-1)])<=0)
+      abort(".r: undefined for <=0");
+    stack[id,(sz-1)]=int(rand()*tp);
+  }
+
+.w
+  for(;;){
+    maybeflush();
+    if((sz=ssize[id])>0){
+      wd=stack[id,(sz-1)];
+      delete stack[id,(sz-1)];
+      ssize[id]--;
+      if(wd==0) break;
+    }
+
+.x
+  for(;;){
+    maybeflush();
+    if((sz=ssize[id])>=2){
+      xb=!(stack[id,(sz-1)]<stack[id,(sz-2)]);
+      delete stack[id,(sz-1)],stack[id,(sz-2)];
+      ssize[id]-=2;
+      if(xb) break;
+    }
+
+.y
+  for(;;){
+    maybeflush();
+    if((sz=ssize[id])>=2){
+      yb=!(stack[id,(sz-1)]>stack[id,(sz-2)]);
+      delete stack[id,(sz-1)],stack[id,(sz-2)];
+      ssize[id]-=2;
+      if(yb) break;
+    }
+
+.z
+  for(;;){
+    maybeflush();
+    if((sz=ssize[id])>=2){
+      zb=(stack[id,(sz-1)]==stack[id,(sz-2)]);
+      delete stack[id,(sz-1)],stack[id,(sz-2)];
+      ssize[id]-=2;
+      if(zb) break;
+    }
+
+.a
+  }
+
+.t
+  if((sz=ssize[id])>0){
+    heap=stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.m
+  if(heap!=empty){
+    stack[id,(ssize[id])]=heap;
+    ssize[id]++;
+  }
+
+.d ただしファイル名
+  return;
+
+.d ただし中身
+  for(i=0;i<ssize[id];i++){
+    stack[(id-1),ssize[id-1]]=stack[id,i];
+    ssize[id-1]++;
+    delete stack[id,i];
+  }
+  delete ssize[id];
+  return;
+
+.+
+  if((sz=ssize[id])>=2){
+    stack[id,(sz-2)]+=stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.-
+  if((sz=ssize[id])>=2){
+    stack[id,(sz-2)]-=stack[id,(sz-1)];
+    if(stack[id,(sz-2)]<0) stack[id,(sz-2)]*=-1;
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.!
+  if((sz=ssize[id])>=2){
+    stack[id,(sz-2)]*=stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+  }
+
+.$
+  if((sz=ssize[id])>=2){
+    v1=stack[id,(sz-2)];
+    v2=stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+    if(gv*lv==0) abort(".$: zero-division");
+    stack[id,(sz-2)]=v2>v1?int(v2/v1):int(v1/v2);
+  }
+
+.%
+  if((sz=ssize[id])>=2){
+    v1=stack[id,(sz-2)];
+    v2=stack[id,(sz-1)];
+    delete stack[id,(sz-1)];
+    ssize[id]--;
+    if(gv*lv==0) abort(".%: zero-division");
+    stack[id,(sz-2)]=v2>v1?int(v2%v1):int(v1%v2);
+  }
+
