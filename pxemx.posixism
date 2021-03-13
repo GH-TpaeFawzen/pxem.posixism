@@ -94,8 +94,9 @@ BEGIN{
   footer=sprintf("'"'"'\n");
   errftr=sprintf("\n"'"'"' 1>&2\n");
 }
-/^flush$/&&during_output==1{
-  print footer;
+/^flush$/{
+  if(during_output==1)
+    print footer;
   during_output=0;
   next;
 }
