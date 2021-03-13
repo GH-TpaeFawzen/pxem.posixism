@@ -147,7 +147,7 @@ END{
 TOASM
 )"
 
-## @ DOTDAWKHERE
+## @ DOTDMACROHERE
 readonly toawk="$(cat <<'TOAWK'
 BEGIN{
   ignore_deadpath=0;
@@ -514,7 +514,7 @@ awk -v dot=46 "$toasm" |
 awk "$(
   printf %s\\n "$toawk" |
   sed '
-    /DOTDAWKHERE/c\
+    /DOTDMACROHERE/c\
 ''''print \\\
 ''''"  for(i=0;i<ssize[id];i++){\\n" \\\
 ''''"    stack[(id-1),ssize[id-1]]=stack[id,i];\\n" \\\
