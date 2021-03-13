@@ -108,21 +108,9 @@ BEGIN{
 }
 1sthdr
 
-# generate main routine
-cat <<-'fnamehdr'
-function main(id,  heap){
-  heap=empty;
-  ssize[id]=0;
-fnamehdr
-
-: fnamemiddle &&
-printf %s "${1##*/}" |
-od -A n -t u1 -v |
-tr -Cs 0123456789 '[\n*]' |
-grep . |
-awk \
-  -v dot=46 \
-'
+# templates for each script of each routine
+## .
+readonly toasm="$(cat <<'TOASM'
 function uncapital(n){
   return (65<=n&&n<=90)?(n+32):n;
 }
@@ -155,8 +143,12 @@ iscmd(uncapital($0))&&prev0==dot{
 END{
   if(literal~/./)
     print "l " literal;
-}' |
-awk '
+}
+TOASM
+)"
+
+## @ DOTDAWKHERE
+readonly toawk="$(cat <<'TOAWK'
 BEGIN{
   ignore_deadpath=0;
   nestsize=0;
@@ -389,7 +381,7 @@ print \
   next;
 }
 $0=="d"{
-  print "  return;"
+  DOTDMACROHERE;
   if(nestsize==0) exit 0;
   ignore_deadpath=1;
   next;
@@ -453,7 +445,29 @@ END{
     exit 1;
   }
 }
-'
+TOAWK
+)"
+
+# generate main routine
+cat <<-'fnamehdr'
+function main(id,  heap){
+  heap=empty;
+  ssize[id]=0;
+fnamehdr
+
+: fnamemiddle &&
+printf %s "${1##*/}" |
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+awk -v dot=46 "$toasm" |
+awk "$(
+  printf %s\\n "$toawk" |
+  sed '
+    /DOTDMACROHERE/c\
+''''  print "  return;"
+  '
+)"
 
 : fnameftr &&
 echo '}'
@@ -496,346 +510,22 @@ printf %s "${1##*/}" |
 od -A n -t u1 -v |
 tr -Cs 0123456789 '[\n*]' |
 grep . |
-awk \
-  -v dot=46 \
-'
-function uncapital(n){
-  return (65<=n&&n<=90)?(n+32):n;
-}
-function iscmd(n){
-  return \
-    (n==33)||(n==36)||(n==37)||(n==43)||(n==45)|| \
-    (95<=n&&n<=102&&n!=96&&n!=98)|| \
-    (n==105)|| \
-    (109<=n&&n<=122&&n!=113&&n!=117);
-}
-BEGIN{
-  literal="";
-  prev0="";
-}
-{
-  literal=(literal=="")?$0:($0 " " literal);
-}
-iscmd(uncapital($0))&&prev0==dot{
-  if(literal!~"^[^ ]* [^ ]*$"){
-    sub("^[^ ]* [^ ]* ","",literal);
-    if(literal~/./)
-      print "l " literal;
-  }
-  printf "%c\n",uncapital($0);
-  literal="";
-}
-{
-  prev0=$0;
-}
-END{
-  if(literal~/./)
-    print "l " literal;
-}' |
-awk '
-BEGIN{
-  ignore_deadpath=0;
-  nestsize=0;
-}
-$0=="a"{
-  if(nestsize==0){
-    print ".a comes before .w, .x, .y, or .z" | "cat 1>&2";
-    print "# syntax error program";
-    exit 1;
-  }
-  nestsize--;
-  ignore_deadpath=0;
-}
-ignore_deadpath==1{
-  next;
-}
-$0~/^[wxyz]$/{
-  nestsize++;
-}
-$1=="l"{
-  gsub("[0-9]+","stack[id,ssize[id]]=&;ssize[id]++;");
-  gsub(" ","\n  ");
-  sub("..","");
-  print$0;
-  next;
-}
-$0=="p"{
-print \
-"  for(i=ssize[id]-1;i>=0;i--){\n" \
-"    print stack[id,i];\n" \
-"    delete stack[id,i];\n" \
-"  }\n" \
-"  ssize[id]=0;";
-  next;
-}
-$0=="o"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    print stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="n"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    nm=stack[id,sz];\n" \
-"    if(nm<0){\n" \
-"      print 45;\n" \
-"      nm*=-1;\n" \
-"    }\n" \
-"    os=48+int(nm%10);\n" \
-"    for(nm=int(nm/10);nm>0;nm=int(nm/10)){\n" \
-"      os=48+int(nm%10) ORS os;\n" \
-"    }\n" \
-"    print os;\n" \
-"    delete\n" \
-"    delete stack[id,(sz-1)],os;\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="i"{
-print \
-"  forceflush();\n" \
-"  sz=ssize[id];\n" \
-"  if($0!=\"\")\n" \
-"    stack[id,sz]=$0;\n" \
-"  else if(gets() >0)\n" \
-"    stack[id,sz]=$0;\n" \
-"  else\n" \
-"    stack[id,sz]=-1;\n" \
-"  $0=\"\";\n" \
-"  ssize[id]++;";
-  next;
-}
-$0=="_"{
-print \
-"  forceflush();\n" \
-"  for(;;){\n" \
-"    if($0==\"\")\n" \
-"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
-"    if(isblank($0)){\n" \
-"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
-"      continue;\n" \
-"    }\n" \
-"    if($0==43){\n" \
-"      sg=1;\n" \
-"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
-"      break;\n" \
-"    }\n" \
-"    if($0==45){\n" \
-"      sg=-1;\n" \
-"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
-"      break;\n" \
-"    }\n" \
-"    if(48<=$0&&$0<58){\n" \
-"      sg=1;\n" \
-"      break;\n" \
-"    }\n" \
-"    abort(\"._: input not integer\");\n" \
-"  }\n" \
-"  if(48<=$0&&$0<58) dv=$0-48;\n" \
-"  else abort(\"._: input is not integer\");\n" \
-"  for(;;){\n" \
-"    if(gets() <=0) break;\n" \
-"    if(48<=$0&&$0<58){\n" \
-"      dv=dv*10+($0-48);\n" \
-"      continue;\n" \
-"    }\n" \
-"    break;\n" \
-"  }\n" \
-"  stack[id,ssize[id]]=sg*dv;\n" \
-"  ssize[id]++;";
-  next;
-}
-$0=="c"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    stack[id,sz]=stack[id,(sz-1)];\n" \
-"    ssize[id]++;\n" \
-"  }";
-  next;
-}
-$0=="s"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="v"{
-print \
-"  sz=ssize[id];\n" \
-"  for(i=0;i<int(sz/2);i++){\n" \
-"    sw=stack[id,i];\n" \
-"    stack[id,i]=stack[id,(sz-i-1)];\n" \
-"    stack[id,(sz-i-1)]=sw;\n" \
-"  }";
-  next;
-}
-$0=="f"{
-  print "  dotf(id);";
-  next;
-}
-$0=="e"{
-print \
-"  maybeflush();\n" \
-"  sub(id+1);";
-  next;
-}
-$0=="r"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    if((tp=stack[id,(sz-1)])<=0)\n" \
-"      abort(\".r: undefined for <=0\");\n" \
-"    stack[id,(sz-1)]=int(rand()*tp);\n" \
-"  }";
-  next;
-}
-$0=="w"{
-print \
-"  for(;;){\n" \
-"    maybeflush();\n" \
-"    if((sz=ssize[id])>0){\n" \
-"      wd=stack[id,(sz-1)];\n" \
-"      delete stack[id,(sz-1)];\n" \
-"      ssize[id]--;\n" \
-"      if(wd==0) break;\n" \
-"    }";
-  next;
-}
-$0=="x"{
-print \
-"  for(;;){\n" \
-"    maybeflush();\n" \
-"    if((sz=ssize[id])>=2){\n" \
-"      xb=!(stack[id,(sz-1)]<stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
-"      ssize[id]-=2;\n" \
-"      if(xb) break;\n" \
-"    }";
-  next;
-}
-$0=="y"{
-print \
-"  for(;;){\n" \
-"    maybeflush();\n" \
-"    if((sz=ssize[id])>=2){\n" \
-"      yb=!(stack[id,(sz-1)]>stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
-"      ssize[id]-=2;\n" \
-"      if(yb) break;\n" \
-"    }";
-  next;
-}
-$0=="z"{
-print \
-"  for(;;){\n" \
-"    maybeflush();\n" \
-"    if((sz=ssize[id])>=2){\n" \
-"      zb=(stack[id,(sz-1)]==stack[id,(sz-2)]);\n" \
-"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
-"      ssize[id]-=2;\n" \
-"      if(zb) break;\n" \
-"    }";
-  next;
-}
-$0=="a"{
-  print "  }";
-  next;
-}
-$0=="t"{
-print \
-"  if((sz=ssize[id])>0){\n" \
-"    heap=stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="m"{
-print \
-"  if(heap!=empty){\n" \
-"    stack[id,(ssize[id])]=heap;\n" \
-"    ssize[id]++;\n" \
-"  }";
-  next;
-}
-$0=="d"{
-print \
-"  for(i=0;i<ssize[id];i++){\n" \
-"    stack[(id-1),ssize[id-1]]=stack[id,i];\n" \
-"    ssize[id-1]++;\n" \
-"    delete stack[id,i];\n" \
-"  }\n" \
-"  delete ssize[id];\n" \
-"  return;";
-  if(nestsize==0) exit 0;
-  ignore_deadpath=1;
-  next;
-}
-$0=="+"{
-print \
-"  if((sz=ssize[id])>=2){\n" \
-"    stack[id,(sz-2)]+=stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="-"{
-print \
-"  if((sz=ssize[id])>=2){\n" \
-"    stack[id,(sz-2)]-=stack[id,(sz-1)];\n" \
-"    if(stack[id,(sz-2)]<0) stack[id,(sz-2)]*=-1;\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="!"{
-print \
-"  if((sz=ssize[id])>=2){\n" \
-"    stack[id,(sz-2)]*=stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"  }";
-  next;
-}
-$0=="$"{
-print \
-"  if((sz=ssize[id])>=2){\n" \
-"    v1=stack[id,(sz-2)];\n" \
-"    v2=stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"    if(gv*lv==0) abort(\".$: zero-division\");\n" \
-"    stack[id,(sz-2)]=v2>v1?int(v2/v1):int(v1/v2);\n" \
-"  }";
-  next;
-}
-$0=="%"{
-print \
-"  if((sz=ssize[id])>=2){\n" \
-"    v1=stack[id,(sz-2)];\n" \
-"    v2=stack[id,(sz-1)];\n" \
-"    delete stack[id,(sz-1)];\n" \
-"    ssize[id]--;\n" \
-"    if(gv*lv==0) abort(\".%: zero-division\");\n" \
-"    stack[id,(sz-2)]=v2>v1?int(v2%v1):int(v1%v2);\n" \
-"  }";
-  next;
-}
-END{
-  if(nestsize!=0){
-    print "No corresponding .a for .w, .x, .y, or .z" | "cat 1>&2";
-    print "# syntax error program";
-    exit 1;
-  }
-}'
+awk -v dot=46 "$toasm" |
+awk "$(
+  printf %s\\n "$toawk" |
+  sed '
+    /DOTDAWKHERE/c\
+''''print \\\
+''''"  for(i=0;i<ssize[id];i++){\\n" \\\
+''''"    stack[(id-1),ssize[id-1]]=stack[id,i];\\n" \\\
+''''"    ssize[id-1]++;\\n" \\\
+''''"    delete stack[id,i];\\n" \\\
+''''"  }\\n" \\\
+''''"  delete ssize[id];\\n" \\\
+''''"  return;";
+  '
+)"
+
 
 cat <<-'contftr'
   for(i=0;i<ssize[id];i++){
