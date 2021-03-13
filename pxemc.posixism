@@ -1,0 +1,847 @@
+#!/bin/sh
+
+# pxemc.posixism --- Compiles Pxem program into subprogram.
+# Written by TpaeFawzen.
+# License. CC0.
+
+set -eu # -e is for syntax error
+umask 0022
+export LC_ALL=C
+type getconf >/dev/null 2>&1 &&
+type command >/dev/null 2>&1 &&
+export PATH="$(command -p getconf PATH)${PATH+:}${PATH-}"
+export UNIX_STD=2003 # for HP-UX
+export POSIXLY_CORRECT=1 # for GNU utils, bash, pdksh
+case "${BASH_VERSION:+y}" in (y)
+  set -o posix
+  set +B # disable echo {a,s,d} to be echo a s d
+;;esac
+case "${ZSH_VERSION:+y}" in (y)
+  emulate sh
+  setopt shwordsplit
+  alias -g '${1+"$@"}'='"$@"'
+  NULLCMD=:
+;;esac
+# reject svr2 bourne
+case "$(
+  ( set dummy; shift; set dummy "$@"; shift; echo $# )
+)" in (1)
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+;;esac
+# reject svr4 bourne
+eval "! false" || {
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+}
+
+usagex(){
+  printf %s\\n "Usage: ${0##*/} FILE" 1>&2
+  exit 1
+}
+
+case "$# ${1:+$1}" in ('1 -?'|'1 -h'|'1 --help')
+  usagex
+;;esac
+while case "$#" in (0) ! :;; (*) :;; esac; do
+  case "$1" in (--) shift; break;; esac
+  case "$1" in (-*) usagex;; esac
+  break
+done
+case "$#" in ([!1]*|1?*) usagex;; esac
+
+errorx(){
+  printf %s\\n "${0##*/}: $2"
+  exit $1
+}
+case "$1" in ('')
+  errorx 1 'Filename cannot be empty'
+;;(-*)
+  set -- "./$1"
+;;esac
+
+# 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
+
+# main
+# generate a subprogram fron now
+cat <<-'1sthdr'
+function abort(msg){
+  print "error 1 " msg;
+  exit(0);
+}
+function gets(  ret,c){
+  if(ibuffer==""){
+    ret=(getter | getline);
+    if(ret<=0) return ret;
+    ibuffer=$0;
+    close(getter)b
+  }
+  c=ibuffer;
+  sub(" .*$","",c);
+  sub("^[ ]* ","",ibuffer);
+  $0=c;
+  return 1;
+}
+function maybeflush(){
+  flushstep++;
+  if(flushstep>=flushat){
+    print flush;
+    flushstep=0;
+  }
+}
+function forceflush(){
+  print flush;
+  flushstep=0;
+}
+function isblank(c){
+  return c==32||(9<=c&&c<=13);
+}
+BEGIN{
+  empty="empty";
+  flush="flush";
+  flushstep=0;
+  $0="";
+  split("",stack,":");
+  split("",ssize,":");
+  srand(randseed);
+  main(0);
+}
+1sthdr
+
+# generate main routine
+cat <<-'fnamehdr'
+function main(id,  heap){
+  heap=empty;
+  ssize[id]=0;
+fnamehdr
+
+: fnamemiddle &&
+printf %s "${1##*/}" |
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+awk \
+  -v dot=46 \
+'
+function uncapital(n){
+  return (65<=n&&n<=90)?(n+32):n;
+}
+function iscmd(n){
+  return \
+    (n==33)||(n==36)||(n==37)||(n==43)||(n==45)|| \
+    (95<=n&&n<=102&&n!=96&&n!=98)|| \
+    (n==105)|| \
+    (109<=n&&n<=122&&n!=113&&n!=117);
+}
+BEGIN{
+  literal="";
+  prev0="";
+}
+{
+  literal=(literal=="")?$0:($0 " " literal);
+}
+iscmd(uncapital($0))&&prev0==dot{
+  sub("^[^ ]* [^ ]* ","",literal);
+  if(literal~/./)
+    print "l " literal;
+  printf "%c\n",uncapital($0);
+  literal="";
+}
+{
+  prev0=$0;
+}
+END{
+  if(literal~/./)
+    print "l " literal;
+}' |
+awk '
+BEGIN{
+  ignore_deadpath=0;
+  nestsize=0;
+}
+$0=="a"{
+  if(nestsize==0){
+    print ".a comes before .w, .x, .y, or .z" | "cat 1>&2";
+    print "# syntax error program";
+    exit 1;
+  }
+  nestsize--;
+  ignore_deadpath=0;
+}
+ignore_deadpath==1{
+  next;
+}
+$0~/^[wxyz]$/{
+  nestsize++;
+}
+$1=="l"{
+  gsub("[0-9]+","stack[id,ssize[id]]=&;ssize[id]++;");
+  gsub(" ","\n  ");
+  sub("..","");
+  print$0;
+  next;
+}
+$0=="p"{
+print \
+"  for(i=ssize[id]-1;i>=0;i--){\n" \
+"    print stack[id,i];\n" \
+"    delete stack[id,i];\n" \
+"  }\n" \
+"  ssize[id]=0;";
+  next;
+}
+$0=="o"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    print stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="n"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    nm=stack[id,sz];\n" \
+"    if(nm<0){\n" \
+"      print 45;\n" \
+"      nm*=-1;\n" \
+"    }\n" \
+"    os=48+int(nm%10);\n" \
+"    for(nm=int(nm/10);nm>0;nm=int(nm/10)){\n" \
+"      os=48+int(nm%10) ORS os;\n" \
+"    }\n" \
+"    print os;\n" \
+"    delete\n" \
+"    delete stack[id,(sz-1)],os;\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0==".i"{
+print \
+"  forceflush();\n" \
+"  sz=ssize[id];\n" \
+"  if($0!=\"\")\n" \
+"    stack[id,sz]=$0;\n" \
+"  else if(gets() >0)\n" \
+"    stack[id,sz]=$0;\n" \
+"  else\n" \
+"    stack[id,sz]=-1;\n" \
+"  $0=\"\";\n" \
+"  ssize[id]++;";
+  next;
+}
+$0=="_"{
+print \
+"  forceflush();\n" \
+"  for(;;){\n" \
+"    if($0==\"\")\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"    if(isblank($0)){\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      continue;\n" \
+"    }\n" \
+"    if($0==43){\n" \
+"      sg=1;\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      break;\n" \
+"    }\n" \
+"    if($0==45){\n" \
+"      sg=-1;\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      break;\n" \
+"    }\n" \
+"    if(48<=$0&&$0<58){\n" \
+"      sg=1;\n" \
+"      break;\n" \
+"    }\n" \
+"    abort(\"._: input not integer\");\n" \
+"  }\n" \
+"  if(48<=$0&&$0<58) dv=$0-48;\n" \
+"  else abort(\"._: input is not integer\");\n" \
+"  for(;;){\n" \
+"    if(gets() <=0) break;\n" \
+"    if(48<=$0&&$0<58){\n" \
+"      dv=dv*10+($0-48);\n" \
+"      continue;\n" \
+"    }\n" \
+"    break;\n" \
+"  }\n" \
+"  stack[id,ssize[id]]=sg*dv;\n" \
+"  ssize[id]++;";
+  next;
+}
+$0=="c"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    stack[id,sz]=stack[id,(sz-1)];\n" \
+"    ssize[id]++;\n" \
+"  }";
+  next;
+}
+$0=="s"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="v"{
+print \
+"  sz=ssize[id];\n" \
+"  for(i=0;i<int(sz/2);i++){\n" \
+"    sw=stack[id,i];\n" \
+"    stack[id,i]=stack[id,(sz-i-1)];\n" \
+"    stack[id,(sz-i-1)]=sw;\n" \
+"  }";
+  next;
+}
+$0=="f"{
+  print "  dotf(id);";
+  next;
+}
+$0=="e"{
+print \
+"  maybeflush();\n" \
+"  sub(id+1);";
+  next;
+}
+$0=="r"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    if((tp=stack[id,(sz-1)])<=0)\n" \
+"      abort(\".r: undefined for <=0\");\n" \
+"    stack[id,(sz-1)]=int(rand()*tp);\n" \
+"  }";
+  next;
+}
+$0=="w"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>0){\n" \
+"      wd=stack[id,(sz-1)];\n" \
+"      delete stack[id,(sz-1)];\n" \
+"      ssize[id]--;\n" \
+"      if(wd==0) break;\n" \
+"    }";
+  next;
+}
+$0=="x"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      xb=!(stack[id,(sz-1)]<stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(xb) break;\n" \
+"    }";
+  next;
+}
+$0=="y"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      yb=!(stack[id,(sz-1)]>stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(yb) break;\n" \
+"    }";
+  next;
+}
+$0=="z"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      zb=(stack[id,(sz-1)]==stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(zb) break;\n" \
+"    }";
+  next;
+}
+$0=="a"{
+  print "  }";
+  next;
+}
+$0=="t"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    heap=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="m"{
+print \
+"  if(heap!=empty){\n" \
+"    stack[id,(ssize[id])]=heap;\n" \
+"    ssize[id]++;\n" \
+"  }";
+  next;
+}
+$0=="d"{
+  print "  return;"
+  if(nestsize==0) exit 0;
+  ignore_deadpath=1;
+  next;
+}
+$0=="+"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]+=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="-"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]-=stack[id,(sz-1)];\n" \
+"    if(stack[id,(sz-2)]<0) stack[id,(sz-2)]*=-1;\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="!"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]*=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="$"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    v1=stack[id,(sz-2)];\n" \
+"    v2=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"    if(gv*lv==0) abort(\".$: zero-division\");\n" \
+"    stack[id,(sz-2)]=v2>v1?int(v2/v1):int(v1/v2);\n" \
+"  }";
+  next;
+}
+$0=="%"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    v1=stack[id,(sz-2)];\n" \
+"    v2=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"    if(gv*lv==0) abort(\".%: zero-division\");\n" \
+"    stack[id,(sz-2)]=v2>v1?int(v2%v1):int(v1%v2);\n" \
+"  }";
+  next;
+}
+END{
+  if(nestsize!=0){
+    print "No corresponding .a for .w, .x, .y, or .z" | "cat 1>&2";
+    print "# syntax error program";
+    exit 1;
+  }
+}
+'
+
+: fnameftr &&
+echo '}'
+
+# check if necessary to read file
+dotf=0 dote=0
+case "${1##*/}" in (.[fF]) dotf=1 ;;esac
+case "${1##*/}" in (.[eE]) dote=1 ;;esac
+case "$dotf$dote" in (00) exit 0 ;;esac
+
+test -e "$1" || errorx 1 "$1: No such file"
+test -f "$1" || errorx 1 "$1: Not a regular file"
+test -r "$1" || errorx 1 "$1: Permission denied"
+grep -q '\.[fF]' <"$1" && dotf=1
+
+# content of file as literal
+case "$dotf" in (1)
+  cat "$1" |
+  od -A n -t u1 -v |
+  tr -Cs 0123456789 '[\n*]' |
+  grep . |
+  sed 's/.*/  stack[id,ssize[id]]=&;ssize[id]++;/' |
+  (echo 'function dotf(id){'; cat; echo '}')
+;;esac
+
+case "$dote" in (0) exit 0 ;;esac
+
+# generate subroutine
+cat <<-'conthdr'
+function sub(id,  heap){
+  heap=empty;
+  ssize[id]=0;
+  for(i=0;i<ssize[(id-1)];i++){
+    stack[id,i]=stack[(id-1),i];
+    ssize[id]++;
+  }
+conthdr
+
+printf %s "${1##*/}" |
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+awk \
+  -v dot=46 \
+'
+function uncapital(n){
+  return (65<=n&&n<=90)?(n+32):n;
+}
+function iscmd(n){
+  return \
+    (n==33)||(n==36)||(n==37)||(n==43)||(n==45)|| \
+    (95<=n&&n<=102&&n!=96&&n!=98)|| \
+    (n==105)|| \
+    (109<=n&&n<=122&&n!=113&&n!=117);
+}
+BEGIN{
+  literal="";
+  prev0="";
+}
+{
+  literal=(literal=="")?$0:($0 " " literal);
+}
+iscmd(uncapital($0))&&prev0==dot{
+  sub("^[^ ]* [^ ]* ","",literal);
+  if(literal~/./)
+    print "l " literal;
+  printf "%c\n",uncapital($0);
+  literal="";
+}
+{
+  prev0=$0;
+}
+END{
+  if(literal~/./)
+    print "l " literal;
+}' |
+awk '
+BEGIN{
+  ignore_deadpath=0;
+  nestsize=0;
+}
+$0=="a"{
+  if(nestsize==0){
+    print ".a comes before .w, .x, .y, or .z" | "cat 1>&2";
+    print "# syntax error program";
+    exit 1;
+  }
+  nestsize--;
+  ignore_deadpath=0;
+}
+ignore_deadpath==1{
+  next;
+}
+$0~/^[wxyz]$/{
+  nestsize++;
+}
+$1=="l"{
+  gsub("[0-9]+","stack[id,ssize[id]]=&;ssize[id]++;");
+  gsub(" ","\n  ");
+  sub("..","");
+  print$0;
+  next;
+}
+$0=="p"{
+print \
+"  for(i=ssize[id]-1;i>=0;i--){\n" \
+"    print stack[id,i];\n" \
+"    delete stack[id,i];\n" \
+"  }\n" \
+"  ssize[id]=0;";
+  next;
+}
+$0=="o"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    print stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="n"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    nm=stack[id,sz];\n" \
+"    if(nm<0){\n" \
+"      print 45;\n" \
+"      nm*=-1;\n" \
+"    }\n" \
+"    os=48+int(nm%10);\n" \
+"    for(nm=int(nm/10);nm>0;nm=int(nm/10)){\n" \
+"      os=48+int(nm%10) ORS os;\n" \
+"    }\n" \
+"    print os;\n" \
+"    delete\n" \
+"    delete stack[id,(sz-1)],os;\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0==".i"{
+print \
+"  forceflush();\n" \
+"  sz=ssize[id];\n" \
+"  if($0!=\"\")\n" \
+"    stack[id,sz]=$0;\n" \
+"  else if(gets() >0)\n" \
+"    stack[id,sz]=$0;\n" \
+"  else\n" \
+"    stack[id,sz]=-1;\n" \
+"  $0=\"\";\n" \
+"  ssize[id]++;";
+  next;
+}
+$0=="_"{
+print \
+"  forceflush();\n" \
+"  for(;;){\n" \
+"    if($0==\"\")\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"    if(isblank($0)){\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      continue;\n" \
+"    }\n" \
+"    if($0==43){\n" \
+"      sg=1;\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      break;\n" \
+"    }\n" \
+"    if($0==45){\n" \
+"      sg=-1;\n" \
+"      if(gets() <=0) abort(\"._: unexpected EOF\");\n" \
+"      break;\n" \
+"    }\n" \
+"    if(48<=$0&&$0<58){\n" \
+"      sg=1;\n" \
+"      break;\n" \
+"    }\n" \
+"    abort(\"._: input not integer\");\n" \
+"  }\n" \
+"  if(48<=$0&&$0<58) dv=$0-48;\n" \
+"  else abort(\"._: input is not integer\");\n" \
+"  for(;;){\n" \
+"    if(gets() <=0) break;\n" \
+"    if(48<=$0&&$0<58){\n" \
+"      dv=dv*10+($0-48);\n" \
+"      continue;\n" \
+"    }\n" \
+"    break;\n" \
+"  }\n" \
+"  stack[id,ssize[id]]=sg*dv;\n" \
+"  ssize[id]++;";
+  next;
+}
+$0=="c"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    stack[id,sz]=stack[id,(sz-1)];\n" \
+"    ssize[id]++;\n" \
+"  }";
+  next;
+}
+$0=="s"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="v"{
+print \
+"  sz=ssize[id];\n" \
+"  for(i=0;i<int(sz/2);i++){\n" \
+"    sw=stack[id,i];\n" \
+"    stack[id,i]=stack[id,(sz-i-1)];\n" \
+"    stack[id,(sz-i-1)]=sw;\n" \
+"  }";
+  next;
+}
+$0=="f"{
+  print "  dotf(id);";
+  next;
+}
+$0=="e"{
+print \
+"  maybeflush();\n" \
+"  sub(id+1);";
+  next;
+}
+$0=="r"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    if((tp=stack[id,(sz-1)])<=0)\n" \
+"      abort(\".r: undefined for <=0\");\n" \
+"    stack[id,(sz-1)]=int(rand()*tp);\n" \
+"  }";
+  next;
+}
+$0=="w"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>0){\n" \
+"      wd=stack[id,(sz-1)];\n" \
+"      delete stack[id,(sz-1)];\n" \
+"      ssize[id]--;\n" \
+"      if(wd==0) break;\n" \
+"    }";
+  next;
+}
+$0=="x"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      xb=!(stack[id,(sz-1)]<stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(xb) break;\n" \
+"    }";
+  next;
+}
+$0=="y"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      yb=!(stack[id,(sz-1)]>stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(yb) break;\n" \
+"    }";
+  next;
+}
+$0=="z"{
+print \
+"  for(;;){\n" \
+"    maybeflush();\n" \
+"    if((sz=ssize[id])>=2){\n" \
+"      zb=(stack[id,(sz-1)]==stack[id,(sz-2)]);\n" \
+"      delete stack[id,(sz-1)],stack[id,(sz-2)];\n" \
+"      ssize[id]-=2;\n" \
+"      if(zb) break;\n" \
+"    }";
+  next;
+}
+$0=="a"{
+  print "  }";
+  next;
+}
+$0=="t"{
+print \
+"  if((sz=ssize[id])>0){\n" \
+"    heap=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="m"{
+print \
+"  if(heap!=empty){\n" \
+"    stack[id,(ssize[id])]=heap;\n" \
+"    ssize[id]++;\n" \
+"  }";
+  next;
+}
+$0=="d"{
+print \
+"  for(i=0;i<ssize[id];i++){\n" \
+"    stack[(id-1),ssize[id-1]]=stack[id,i];\n" \
+"    ssize[id-1]++;\n" \
+"    delete stack[id,i];\n" \
+"  }\n" \
+"  delete ssize[id];\n" \
+"  return;";
+  if(nestsize==0) exit 0;
+  ignore_deadpath=1;
+  next;
+}
+$0=="+"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]+=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="-"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]-=stack[id,(sz-1)];\n" \
+"    if(stack[id,(sz-2)]<0) stack[id,(sz-2)]*=-1;\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="!"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    stack[id,(sz-2)]*=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"  }";
+  next;
+}
+$0=="$"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    v1=stack[id,(sz-2)];\n" \
+"    v2=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"    if(gv*lv==0) abort(\".$: zero-division\");\n" \
+"    stack[id,(sz-2)]=v2>v1?int(v2/v1):int(v1/v2);\n" \
+"  }";
+  next;
+}
+$0=="%"{
+print \
+"  if((sz=ssize[id])>=2){\n" \
+"    v1=stack[id,(sz-2)];\n" \
+"    v2=stack[id,(sz-1)];\n" \
+"    delete stack[id,(sz-1)];\n" \
+"    ssize[id]--;\n" \
+"    if(gv*lv==0) abort(\".%: zero-division\");\n" \
+"    stack[id,(sz-2)]=v2>v1?int(v2%v1):int(v1%v2);\n" \
+"  }";
+  next;
+}
+END{
+  if(nestsize!=0){
+    print "No corresponding .a for .w, .x, .y, or .z" | "cat 1>&2";
+    print "# syntax error program";
+    exit 1;
+  }
+}'
+
+cat <<-'contftr'
+  for(i=0;i<ssize[id];i++){
+    stack[(id-1),ssize[id-1]]=stack[id,i];
+    ssize[id-1]++;
+    delete stack[id,i];
+  }
+  delete ssize[id];
+}
+contftr
+
+# finally
+exit 0
