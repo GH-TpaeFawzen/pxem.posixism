@@ -13,11 +13,14 @@ with POSIX-compatible utilities.
 compiled program.
 
 This implementation tries to comply the original 
-specification and as exactl yas possible, 
+specification and as exactly as possible, 
 including unspecified behaviours such as:
 
 - `.r` when popped value is non-positive
 - zero-division
+
+This implementation aborts when it tries to do 
+unspecified behaviour.
 
 # Assumed usage
 ```sh
