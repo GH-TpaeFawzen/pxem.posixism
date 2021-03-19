@@ -1,0 +1,439 @@
+#!/bin/sh
+
+# pxemi.2.posixism. Pxem-to-awk compiler-interpreter.
+# Written by TpaeFawzen.
+# License. CC0.
+
+set -eu # -e is for syntax error
+umask 0022
+export LC_ALL=C
+type getconf >/dev/null 2>&1 &&
+type command >/dev/null 2>&1 &&
+export PATH="$(command -p getconf PATH)${PATH+:}${PATH-}"
+export UNIX_STD=2003 # for HP-UX
+export POSIXLY_CORRECT=1 # for GNU utils, bash, pdksh
+case "${BASH_VERSION:+y}" in (y)
+  set -o posix
+  set +B # disable echo {a,s,d} to be echo a s d
+;;esac
+case "${ZSH_VERSION:+y}" in (y)
+  emulate sh
+  setopt shwordsplit
+  alias -g '${1+"$@"}'='"$@"'
+  NULLCMD=:
+;;esac
+# reject svr2 bourne
+case "$(
+  ( set dummy; shift; set dummy "$@"; shift; echo $# )
+)" in (1)
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+;;esac
+# reject svr4 bourne
+eval "! false" || {
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+}
+
+usagex(){
+  printf %s\\n "Usage: ${0##*/} FILE" 1>&2
+  exit 1
+}
+
+case "$# ${1:+$1}" in ('1 -?'|'1 -h'|'1 --help')
+  usagex
+;;esac
+while case "$#" in (0) ! :;; (*) :;; esac; do
+  case "$1" in (--) shift; break;; esac
+  case "$1" in (-*) usagex;; esac
+  break
+done
+case "$#" in ([!1]*|1?*) usagex;; esac
+
+errorx(){
+  printf %s\\n "${0##*/}: $2"
+  exit $1
+}
+case "$1" in ('')
+  errorx 1 'Filename cannot be empty'
+;;(-*)
+  set -- "./$1"
+;;esac
+
+# 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
+
+# main
+
+readonly toasm="$(cat <<'TOASM'
+function uncapital(n){
+  return (65<=n&&n<=90)?(n+32):n;
+}
+function iscmd(n){
+  return \
+    (n==33)||(n==36)||(n==37)||(n==43)||(n==45)|| \
+    (95<=n&&n<=102&&n!=96&&n!=98)|| \
+    (n==105)|| \
+    (109<=n&&n<=122&&n!=113&&n!=117);
+}
+BEGIN{
+  literal="";
+  prev0="";
+}
+{
+  literal=(literal=="")?$0:($0 " " literal);
+}
+iscmd(uncapital($0))&&prev0==dot{
+  if(literal!~"^[^ ]* [^ ]*$"){
+    sub("^[^ ]* [^ ]* ","",literal);
+    if(literal~/./)
+      print "l " literal;
+  }
+  printf "%c\n",uncapital($0);
+  literal="";
+}
+{
+  prev0=$0;
+}
+END{
+  if(literal~/./)
+    print "l " literal;
+}
+TOASM
+)"
+
+# 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
+# "^(3[367]|4[35]|9[579]|10[^3678]|11[^37]|12[0-2])$"
+
+# 33 36 37 43 45 65 67 68 69 70 73 77 78 79 80 82 83 84 86 87 88 89 90 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
+# "^(3[367]|4[35]|6[5789]|7[03789]|8[02345789]|9[0579]|10[01259]|11[01245689]|12[012])$"
+
+assembly="$(
+
+printf "%s" "$1" |
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+awk -v dot=46 '
+BEGIN{
+   cmd["112"]="p";cmd["80"]="p";
+   cmd["111"]="o";cmd["79"]="o";
+   cmd["110"]="n";cmd["78"]="n";
+   cmd["105"]="i";cmd["73"]="i";
+   cmd["95"]="_";
+   cmd["99"]="c";cmd["67"]="c";
+   cmd["115"]="s";cmd["83"]="s";
+   cmd["118"]="v";cmd["86"]="v";
+   cmd["102"]="f";cmd["70"]="f";
+   cmd["101"]="e";cmd["69"]="e";
+   cmd["114"]="r";cmd["82"]="r";
+   cmd["119"]="w";cmd["87"]="w";
+   cmd["120"]="x";cmd["88"]="x";
+   cmd["121"]="y";cmd["89"]="y";
+   cmd["122"]="z";cmd["90"]="z";
+   cmd["97"]="a";cmd["65"]="a";
+   cmd["116"]="t";cmd["84"]="t";
+   cmd["109"]="m";cmd["77"]="m";
+   cmd["100"]="d";cmd["68"]="d";
+   cmd["43"]="+";
+   cmd["45"]="-";
+   cmd["33"]="!";
+   cmd["36"]="$";
+   cmd["37"]="%";
+   split("",stack,":");
+   level=0;
+   first=second="";
+   for(;;){
+      if(getline first<=0) break;
+      if(getline second<=0) second="";
+      
+      # /\.[pPoO...]/
+      if(second in cmd && first==dot){
+         emitliterate();
+         print cmd[second];
+      }
+      # /.\./
+      else if(second==dot){
+         while(second==dot){
+            pushliterate(first);
+            first=second;
+            if(getline second<=0){
+               pushliterate(first);
+               emitliterate();
+               exit 0;
+            }
+         }
+         if(second in cmd){
+            emitliterate();
+            print cmd[second];
+         }
+      }
+      else{
+         pushliterate(first);
+         pushliterate(second);
+      }
+   }
+   emitliterate();
+}
+function pushliterate(c){
+   if(c=="") return;
+   stack[level]=c;
+   level+=1;
+}
+function emitliterate(){
+   # literate shall be pushed in reverse order
+   if(level==0) return;
+   printf "l";
+   for(;level>0;level-=1)
+      printf " " stack[level-1];
+   print "";
+}
+' |
+# check syntax
+# also remove deadcode (from .d to EOF or matching .a)
+awk -v me="${0##*/}" '
+BEGIN{
+   nest=0;
+   while(getline>0){
+      nest+=/[wxyz]/-/a/;
+      if(nest<0){
+         print me ": Syntax error: .a command without matching .[wxyz]" | "cat 1>&2";
+         exit 1;
+      }
+      # add a hint please
+      # wxyz: begin of what level?
+      # a: end of what level?
+      if(/[wxyza]/) $0=$0 " L " (/a/?nest+1:nest);
+      print $0;
+      if(/d/&&nest==0) exit 0;
+      if(/d/){
+         unignore_on=nest-1;
+         while(nest>unignore_on){
+            if(getline<=0){
+               print me ": Syntax error: .[wxyz] command without matching .a" | "cat 1>&2";
+               exit 1;
+            }
+            nest+=/[wxyz]/-/a/;
+         }
+         print "a";
+      }
+   }
+   if(nest>0){
+      print me ": Syntax error: .[wxyz] command without matching .a" | "cat 1>&2";
+      exit 1;
+   }
+   exit 0;
+}'
+)" # check syntax and remove deadcode end
+
+assembly="$(
+
+printf %s\\n "$assembly" |
+# remove poncsvrt+-!$% if surely empty, 
+# because they are NOP in such case
+# obtw +-!$% requires >=2 items
+awk -v assumed_size=0 -v surely=1 -v heap_used=0 '
+/[poncsvrt+!$%-]/&&surely&&assumed_size==0{
+   next;
+}
+/[+!$%-]/&&surely&&assumed_size==1{
+   next;
+}
+/l/&&surely{
+   assumed_size+=NF-1;
+}
+/p/{
+   assumed_size=0;
+   surely=1;
+}
+/[ons]/&&surely&&assumed_size>=1{
+   assumed_size-=1;
+}
+/[i_]/&&surely{
+   if(surely) assumed_size+=1;
+}
+/c/&&surely&&assumed_size>=1{
+   assumed_size+=1;
+}
+/[fewxyza]/{
+   surely=0;
+}
+/t/&&surely&&assumed_size>=1{
+   assumed_size-=1;
+   heap_used=1;
+}
+/m/&&surely&&heap_used{
+   assumed_size+=1;
+}
+/[+!$%-]/&&surely&&assumed_size>=2{
+   assumed_size-=1;
+}
+1;
+'
+)" # remove poncsvrt+-!$% if surely empty end
+
+assembly="$(
+
+printf %s\\n "$assembly" |
+# calculate const expr
+awk -v me="${0##*/}" '
+BEGIN{
+   # plz remember
+   split("",prog,":");
+   # prog size
+   i=0;
+}
+{
+   # store current code
+   prog[i]=$0; i+=1;
+   
+   prev=prog[i-2];
+}
+prev~"l"&&/l/{
+   # join two literal commands
+   prog[i-2]=prev substr($0,3);
+   i-=1;
+   next;
+}
+prev~"l"&&/c/{
+   sub("[^ ]*$","& &",prog[i-2]);
+   i-=1;
+   next;
+}
+prev~"^l [^ ]*$"&&/s/{
+   # just discard it when single literal
+   i-=2;
+   next;
+}
+prev~"l"&&/s/{
+   sub(" [^ *]$","",prog[i-2]);
+   i-=1;
+   next;
+}
+prev~"^l [^ ]* [^ ]*"&&/[+!$%-]/{
+   # arithmetic requires >=2 items
+   # prevent zero-division
+   if(/[$%]/&&prev~"( 0| 0 [^ ]*)$") next;
+   
+   # extract two nums on top
+   x=y=prev;
+   sub(" [^ ]* [^ ]*$","",prev);
+   sub("^.* ","",x);
+   sub(" [^ ]*$","",y); sub("^.* ","",y);
+   # make it sure: x>=y
+   if(x<=y){
+      _x=x; x=y; y=_x;
+   }
+   
+   # finally
+   if(/\+/) prog[i-2]=prev " " (x+y);
+   if(/-/) prog[i-2]=prev " " (x-y);
+   if(/!/) prog[i-2]=prev " " (x*y);
+   if(/\$/) prog[i-2]=prev " " int(x/y);
+   if(/%/) prog[i-2]=prev " " int(x%y);
+   i-=1;
+   next;
+}
+END{
+   for(j=0;j<i;j++)
+      print prog[j];
+}
+'
+)" # constant reduction end
+
+assembly="$(
+printf %s\\n "$assembly" |
+# remove hints for wxyza
+sed '/wxyza/s/ .*$//'
+)"
+
+compiled_fname="$(
+
+printf %s\\n "$assembly" |
+sed -n '
+# # this is content-specific
+# $a\
+# d();return;
+/^l /{
+  s///
+  s/[^ ]*/P(&);/g
+  s/ //g
+  p
+  b
+}
+/[poni_csvfertm]/s//&();/p
+t
+/[wxyz]/s//while(&()){/p
+t
+/a/s//}/p
+t
+# this is fname-specific
+/d/s//exit(0);/p
+# # this is content-specific
+# /d/s//d();return;/p
+t
+/+/s//add();/p
+t
+/-/s//sub();/p
+t
+/!/s//mul();/p
+t
+/\$/s//div();/p
+t
+/%/s//mod();/p
+t
+# should not reach to this
+s/.*/WTF("&");/p
+'
+
+)" compile end
+
+used_cmds="$(
+printf %s\\n "$assembly" |
+tr -d d | # because fname
+cut -c 1 |
+sort |
+uniq |
+tr -d \\n
+)"
+
+# P(char) is push.
+# E() returns if empty.
+# T() is top.
+# k>=0. global. id of VM.
+# S. global stack. [k] or [k,i] where
+#   S[k] stores size
+#   S[k,i] stores items. 0<=i<S[k].
+# h[k]. heap.
+# u(char) is putchar().
+# G() is getchar().
+# U(char) is ungetc().
+
+defn="$(
+case "$used_cmds" in (*l*)
+  : 'P() defined already'
+;;esac
+case "$used_cmds" in (*p*)
+  echo 'function p(i){for(i=S[k]-1;i>=0;i--)u(S[k,i]);S[k]=0;}'
+;;esac
+case "$used_cmds" in (*o*)
+  echo 'function o(i){if((i=S[k]-1)>=0){u(S[k,i]);S[k]--;}}'
+;;esac
+case "$used_cmds" in (*n*)
+   echo 'function n(i,x,d,l){if((i=S[k]-1)==0)return;x=S[k,i];l=length(x);for(i=1;i<=l;i++)u((d=substr(x,i,1))~"[0-9]"?d+48:d);S[k]--;}'
+;;esac
+case "$used_cmds" in (*i*)
+   echo 'function i(){P(G());}'
+;;esac
+case "$used_cmds" in (*_*)
+   echo 'function _(){}'
+;;esac
+case "$used_cmds" in (*c*)
+   echo 'function c(){if(!E())P(T());}'
+;;esac
+case "$used_cmds" in (*s*)
+   echo 'function s(){if(!E())X();}'
+;;esac
+
+)" # defn="$( ... )"
+
+# WIP
