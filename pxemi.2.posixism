@@ -60,56 +60,65 @@ case "$1" in ('')
   set -- "./$1"
 ;;esac
 
-# 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
+# $1 should be fname.
 
-# main
+# NOT main yet. SORRY POSIXists.
 
-readonly toasm="$(cat <<'TOASM'
-function uncapital(n){
-  return (65<=n&&n<=90)?(n+32):n;
-}
-function iscmd(n){
-  return \
-    (n==33)||(n==36)||(n==37)||(n==43)||(n==45)|| \
-    (95<=n&&n<=102&&n!=96&&n!=98)|| \
-    (n==105)|| \
-    (109<=n&&n<=122&&n!=113&&n!=117);
-}
-BEGIN{
-  literal="";
-  prev0="";
-}
-{
-  literal=(literal=="")?$0:($0 " " literal);
-}
-iscmd(uncapital($0))&&prev0==dot{
-  if(literal!~"^[^ ]* [^ ]*$"){
-    sub("^[^ ]* [^ ]* ","",literal);
-    if(literal~/./)
-      print "l " literal;
-  }
-  printf "%c\n",uncapital($0);
-  literal="";
-}
-{
-  prev0=$0;
-}
-END{
-  if(literal~/./)
-    print "l " literal;
-}
-TOASM
-)"
+#
+# optlv. variable.
+# optimization level. in decimal non-negative integer.
+#
+# lv. description. 
+# 0.  simplest compilation.
+# 1.  remove deadcode from after of .d to EOF or end of loop.
+#     in level 0 filename .d.w is rejected; level >=1 accepts it.
+# 2.  remove commands that would be NOP when not enough items.
+# 3.  calculate constant expr.
+#
+# maybe TODO.
+#   remove loops that would never be executed.
+#   do constant .v
+#
+optlv=99
 
-# 33 36 37 43 45 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
-# "^(3[367]|4[35]|9[579]|10[^3678]|11[^37]|12[0-2])$"
+#
+# compile. filter function.
+# usage.
+#   printf "%s" ${FILE##*/}" | compile fname
+#   cat "$FILE" | compile content
+#
+# stdout. 
+#   AWK subprogram.
+#
+# required variables.
+#   optlv. optimization level in >=0 integer. see above.
+#
+# resulting variable.
+#   assembly. result of pseudo-assembly.
+#   fname_cmds. used commands except .d command. describes required functions.
+#   content_cmds. used commands. describes required functions.
+#
+compile(){
 
-# 33 36 37 43 45 65 67 68 69 70 73 77 78 79 80 82 83 84 86 87 88 89 90 95 97 99 100 101 102 105 109 110 111 112 114 115 116 118 119 120 121 122
-# "^(3[367]|4[35]|6[5789]|7[03789]|8[02345789]|9[0579]|10[01259]|11[01245689]|12[012])$"
+# dollar one represents mode. either fname or content.
+# default. fname.
+case "$#" in (0) set -- fname;; esac
+case "$1" in (fname|content) :
+;; echo 'Usage: compile {fname|content}' 1>&2; return 80
+;;esac
+
+# mktbl="$(
+#   printf 'pPoOnNiI_cCsSvVfFeErRwWxXyYzZaAtTmMdD+-!$%%' |
+#   od -A n -t u1 -v |
+#   tr -Cs 0123456789 '[\n*]' |
+#   grep . |
+#   awk -v '
+#     {printf"cmd\"%d\"=\"%c\";",$0,tolower(sprintf("%c",$0));}
+#   '
+# )"
 
 assembly="$(
 
-printf "%s" "$1" |
 od -A n -t u1 -v |
 tr -Cs 0123456789 '[\n*]' |
 grep . |
@@ -119,8 +128,8 @@ BEGIN{
    cmd["111"]="o";cmd["79"]="o";
    cmd["110"]="n";cmd["78"]="n";
    cmd["105"]="i";cmd["73"]="i";
-   cmd["95"]="_";
-   cmd["99"]="c";cmd["67"]="c";
+   cmd["95"] ="_";
+   cmd["99"] ="c";cmd["67"]="c";
    cmd["115"]="s";cmd["83"]="s";
    cmd["118"]="v";cmd["86"]="v";
    cmd["102"]="f";cmd["70"]="f";
@@ -130,15 +139,15 @@ BEGIN{
    cmd["120"]="x";cmd["88"]="x";
    cmd["121"]="y";cmd["89"]="y";
    cmd["122"]="z";cmd["90"]="z";
-   cmd["97"]="a";cmd["65"]="a";
+   cmd["97"] ="a";cmd["65"]="a";
    cmd["116"]="t";cmd["84"]="t";
    cmd["109"]="m";cmd["77"]="m";
    cmd["100"]="d";cmd["68"]="d";
-   cmd["43"]="+";
-   cmd["45"]="-";
-   cmd["33"]="!";
-   cmd["36"]="$";
-   cmd["37"]="%";
+   cmd["43"] ="+";
+   cmd["45"] ="-";
+   cmd["33"] ="!";
+   cmd["36"] ="$";
+   cmd["37"] ="%";
    split("",stack,":");
    level=0;
    first=second="";
@@ -189,8 +198,8 @@ function emitliterate(){
 }
 ' |
 # check syntax
-# also remove deadcode (from .d to EOF or matching .a)
-awk -v me="${0##*/}" '
+# opt1. remove deadcode (from .d to EOF or matching .a)
+awk -v me="${0##*/}" -v optlv="$optlv" '
 BEGIN{
    nest=0;
    while(getline>0){
@@ -202,8 +211,10 @@ BEGIN{
       # add a hint please
       # wxyz: begin of what level?
       # a: end of what level?
-      if(/[wxyza]/) $0=$0 " L " (/a/?nest+1:nest);
+      if(/[wxyza]/) $0=$0 " @ " (/a/?nest+1:nest);
       print $0;
+      # opt1: remove deadcode
+      if(optlv<=0) continue;
       if(/d/&&nest==0) exit 0;
       if(/d/){
          unignore_on=nest-1;
@@ -225,13 +236,24 @@ BEGIN{
 }'
 )" # check syntax and remove deadcode end
 
+# opt2. remove commands that would be NOP when not enough items.
+case "$(( optlv >= 2 ))" in (1)
 assembly="$(
 
 printf %s\\n "$assembly" |
 # remove poncsvrt+-!$% if surely empty, 
 # because they are NOP in such case
 # obtw +-!$% requires >=2 items
-awk -v assumed_size=0 -v surely=1 -v heap_used=0 '
+awk \
+  -v assumed_size=0 \
+  -v surely="$(
+    case "$1" in (filename)
+      echo 1
+    ;;(content)
+      echo 0
+    ;;esac
+  )" \
+  -v heap_used=0 '
 /[poncsvrt+!$%-]/&&surely&&assumed_size==0{
    next;
 }
@@ -271,10 +293,16 @@ awk -v assumed_size=0 -v surely=1 -v heap_used=0 '
 '
 )" # remove poncsvrt+-!$% if surely empty end
 
+;;esac # opt2 end
+
+# opt3. calculate constant expr.
+case "$(( optlv >= 3 ))" in (1)
+
 assembly="$(
 
 printf %s\\n "$assembly" |
 # calculate const expr
+# they are literals with cs+-!$%
 awk -v me="${0##*/}" '
 BEGIN{
    # plz remember
@@ -294,31 +322,31 @@ prev~"l"&&/l/{
    i-=1;
    next;
 }
-prev~"l"&&/c/{
-   sub("[^ ]*$","& &",prog[i-2]);
+prev~"^l [^ ]+"&&/c/{
+   sub("[^ ]+$","& &",prog[i-2]);
    i-=1;
    next;
 }
-prev~"^l [^ ]*$"&&/s/{
+prev~"^l [^ ]+$"&&/s/{
    # just discard it when single literal
    i-=2;
    next;
 }
 prev~"l"&&/s/{
-   sub(" [^ *]$","",prog[i-2]);
+   sub(" [^ ]+$","",prog[i-2]);
    i-=1;
    next;
 }
-prev~"^l [^ ]* [^ ]*"&&/[+!$%-]/{
+prev~"^l [^ ]+ [^ ]+"&&/[+!$%-]/{
    # arithmetic requires >=2 items
    # prevent zero-division
-   if(/[$%]/&&prev~"( 0| 0 [^ ]*)$") next;
+   if(/[$%]/&&prev~"( 0| 0 [^ ]+)$") next;
    
    # extract two nums on top
    x=y=prev;
-   sub(" [^ ]* [^ ]*$","",prev);
+   sub(" [^ ]+ [^ ]+$","",prev);
    sub("^.* ","",x);
-   sub(" [^ ]*$","",y); sub("^.* ","",y);
+   sub(" [^ ]+$","",y); sub("^.* ","",y);
    # make it sure: x>=y
    if(x<=y){
       _x=x; x=y; y=_x;
@@ -340,19 +368,36 @@ END{
 '
 )" # constant reduction end
 
+;;esac # opt3 end
+
+# now optimization is done.
+
+# this is to determine what functions to define.
+used_cmds="$(
+printf %s\\n "$assembly" |
+cut -c 1 |
+sort |
+uniq |
+tr -d \\n |
+case "$1" in (fname) tr -d d ;;(content) cat ;;esac
+)"
+case "$1" in (fname)
+  fname_cmds="$used_cmds"
+;;         (content)
+  content_cmds="$used_cmds"
+;;esac
+
+# remove hints for wxyza
 assembly="$(
 printf %s\\n "$assembly" |
-# remove hints for wxyza
-sed '/wxyza/s/ .*$//'
+sed 's/ @ .*$//'
 )"
 
-compiled_fname="$(
-
+# finally translate to awk
 printf %s\\n "$assembly" |
 sed -n '
-# # this is content-specific
-# $a\
-# d();return;
+# l has some arguments
+# P(char) is push.
 /^l /{
   s///
   s/[^ ]*/P(&);/g
@@ -360,17 +405,23 @@ sed -n '
   p
   b
 }
+# they are simple; to same named function.
 /[poni_csvfertm]/s//&();/p
 t
 /[wxyz]/s//while(&()){/p
 t
 /a/s//}/p
 t
-# this is fname-specific
-/d/s//exit(0);/p
-# # this is content-specific
-# /d/s//d();return;/p
+'"$(
+# d needs some branching
+case "$1" in (fname)
+  echo '/d/s//exit(0);/p'
+;;(content)
+  echo '/d/s//d();return;/p'
+;;esaf
+)"'
 t
+# arithmetics because function name restrictions
 /+/s//add();/p
 t
 /-/s//sub();/p
@@ -381,59 +432,77 @@ t
 t
 /%/s//mod();/p
 t
-# should not reach to this
+# should not reach here
 s/.*/WTF("&");/p
-'
-
-)" compile end
-
-used_cmds="$(
-printf %s\\n "$assembly" |
-tr -d d | # because fname
-cut -c 1 |
-sort |
-uniq |
+' |
+(
+case "$1" in (fname)
+  printf 'BEGIN{k=0;split("",S,":");split("",h,":");'
+  cat
+  printf 'exit(0);}'
+;;(content)
+  printf 'function e(aa){k++;S[k]=S[k-1];for(aa=0;aa<S[k];aa++)S[k,aa]=S[k-1,aa];'
+  cat
+  printf 'd();}'
+;;esac
+) |
 tr -d \\n
-)"
 
+} # compile()
+
+#
 # P(char) is push.
 # E() returns if empty.
+# J() returns if size >= 2.
 # T() is top.
+# X() is pop, with return of the value.
 # k>=0. global. id of VM.
 # S. global stack. [k] or [k,i] where
 #   S[k] stores size
 #   S[k,i] stores items. 0<=i<S[k].
-# h[k]. heap.
+# h[k]. global heap. empty or integer
 # u(char) is putchar().
 # G() is getchar().
 # U(char) is ungetc().
+# A(str) is abort().
+#
 
-defn="$(
-case "$used_cmds" in (*l*)
-  : 'P() defined already'
-;;esac
-case "$used_cmds" in (*p*)
-  echo 'function p(i){for(i=S[k]-1;i>=0;i--)u(S[k,i]);S[k]=0;}'
-;;esac
-case "$used_cmds" in (*o*)
-  echo 'function o(i){if((i=S[k]-1)>=0){u(S[k,i]);S[k]--;}}'
-;;esac
-case "$used_cmds" in (*n*)
-   echo 'function n(i,x,d,l){if((i=S[k]-1)==0)return;x=S[k,i];l=length(x);for(i=1;i<=l;i++)u((d=substr(x,i,1))~"[0-9]"?d+48:d);S[k]--;}'
-;;esac
-case "$used_cmds" in (*i*)
-   echo 'function i(){P(G());}'
-;;esac
-case "$used_cmds" in (*_*)
-   echo 'function _(){}'
-;;esac
-case "$used_cmds" in (*c*)
-   echo 'function c(){if(!E())P(T());}'
-;;esac
-case "$used_cmds" in (*s*)
-   echo 'function s(){if(!E())X();}'
-;;esac
-
-)" # defn="$( ... )"
-
-# WIP
+# define functions required by commands
+echo "$used_cmds" |
+fold -w 1 |
+sort |
+uniq |
+sed -n '
+# skip l; P() is enough
+/p/s//function p(i){while(!E())u(X());}/p
+/o/s//function o(i){if(!E())u(X());}/p
+/n/s//function n(i,x,d,l){if(!E()){x=X();l=length(x);for(i=1;i<=l;i++)u((d=substr(x,i,1))~"[0-9]"?d+48:45);}}/p
+/i/s//function i(){P(G());}/p
+/_/c\
+function _(m,c,s,x){\
+  m="._: Not a decimal integer input";c=G();s=1;for(;;){\
+    if(47<c&&c<58)break;if(c~"4[35]"){\
+      s=44-c;c=G();break;}\
+    if((8<c&&c<14)+(c==32)){c=G();continue;}A(m);}\
+  if((c<48)+(c>57))A(m);for(;47<c||c<58+;c=G())x=x (c-48);U(c);P(s*x);}
+/c/s//function c(){if(!E())P(T());}/p
+/s/s//function s(){if(!E())X();}/p
+/v/s//function v(i,j,t){for(i=0,j=S[k]-1;i<j;i++,j--){t=S[k,i];S[k,i]=S[k,j];S[k,j]=t;}}/p
+# skip f; somewhere
+# skip e; is defined on: compile content
+/r/c\
+function r(){if(!E()){if(rposonly&&T()<=0)A(".r: Undefined against non-positive item");P(int(rand()*X()));}}
+/w/s//function w(){return E()||(X()!=0);}/p
+/x/s//function x(a,b){if(E())return 1;a=X();b=X();return a<b;}/p
+/y/s//function y(a,b){if(E())return 1;a=X();b=X();return a>b;}/p
+/z/s//function z(a,b){if(E())return 1;a=X();b=X();return a==b;}/p
+# skip a; no function needed
+/t/s//function t(){if(!E())h[k]=X();}/p
+/m/s//function m(){if(k in h)P(h[k]);}/p
+/d/s//function d(i,j){if(k in h)delete h[k];k--;for(i=0,j=S[k];i<S[k+1];i++,j++,S[k]++)S[k,j]=S[k+1,i];}/p
+/+/s//function add(){if(J())P(X()+X());}/p
+/-/s//function sub(y){if(J()){y=X()-X();y=y<0?-y:y;P(y);}}/p
+/!/s//function mul(){if(J())P(X()*X());}/p
+/\$/s!!function div(x,y){if(J()){x=X();y=X();if(x*y==0)A(".$: Zero-division");P(int(x>y?x/y:y/x))!p
+/%/s!!function mod(x,y){if(J()){x=X();y=X();if(x*y==0)A(".$: Zero-division");P(int(x>y?x%y:y%x))!p
+'
