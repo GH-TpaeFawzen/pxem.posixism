@@ -426,7 +426,7 @@ print \
 "    v2=stack[id,(sz-1)];\n" \
 "    delete stack[id,(sz-1)];\n" \
 "    ssize[id]--;\n" \
-"    if(gv*lv==0) abort(\".$: zero-division\");\n" \
+"    if(v1*v2==0) abort(\".$: zero-division\");\n" \
 "    stack[id,(sz-2)]=v2>v1?int(v2/v1):int(v1/v2);\n" \
 "  }";
   next;
@@ -438,7 +438,7 @@ print \
 "    v2=stack[id,(sz-1)];\n" \
 "    delete stack[id,(sz-1)];\n" \
 "    ssize[id]--;\n" \
-"    if(gv*lv==0) abort(\".%: zero-division\");\n" \
+"    if(v1*v2==0) abort(\".%: zero-division\");\n" \
 "    stack[id,(sz-2)]=v2>v1?int(v2%v1):int(v1%v2);\n" \
 "  }";
   next;
