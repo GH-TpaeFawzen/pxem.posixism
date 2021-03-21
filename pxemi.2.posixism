@@ -88,15 +88,10 @@ optlv=99
 #   cat "$FILE" | compile content
 #
 # stdout. 
-#   AWK subprogram.
+#   AWK subprogram with an independent line of comment indicating used commands.
 #
 # required variables.
 #   optlv. optimization level in >=0 integer. see above.
-#
-# resulting variable.
-#   assembly. result of pseudo-assembly.
-#   fname_cmds. used commands except .d command. describes required functions.
-#   content_cmds. used commands. describes required functions.
 #
 compile(){
 
@@ -104,7 +99,7 @@ compile(){
 # default. fname.
 case "$#" in (0) set -- fname;; esac
 case "$1" in (fname|content) :
-;; echo 'Usage: compile {fname|content}' 1>&2; return 80
+;;(*) echo 'Usage: compile {fname|content}' 1>&2; return 80
 ;;esac
 
 # mktbl="$(
@@ -205,7 +200,7 @@ BEGIN{
    while(getline>0){
       nest+=/[wxyz]/-/a/;
       if(nest<0){
-         print me ": Syntax error: .a command without matching .[wxyz]" | "cat 1>&2";
+         print me ": Syntax error: .a unexpected before .[wxyz]" | "cat 1>&2";
          exit 1;
       }
       # add a hint please
@@ -372,20 +367,14 @@ END{
 
 # now optimization is done.
 
-# this is to determine what functions to define.
-used_cmds="$(
+# this is to determine what functions are required.
 printf %s\\n "$assembly" |
 cut -c 1 |
 sort |
 uniq |
 tr -d \\n |
-case "$1" in (fname) tr -d d ;;(content) cat ;;esac
-)"
-case "$1" in (fname)
-  fname_cmds="$used_cmds"
-;;         (content)
-  content_cmds="$used_cmds"
-;;esac
+case "$1" in (fname) tr -d d ;;(content) cat ;;esac |
+grep . | sed 's/^/# /'
 
 # remove hints for wxyza
 assembly="$(
@@ -418,7 +407,7 @@ case "$1" in (fname)
   echo '/d/s//exit(0);/p'
 ;;(content)
   echo '/d/s//d();return;/p'
-;;esaf
+;;esac
 )"'
 t
 # arithmetics because function name restrictions
@@ -437,11 +426,11 @@ s/.*/WTF("&");/p
 ' |
 (
 case "$1" in (fname)
-  printf 'BEGIN{k=0;split("",S,":");split("",h,":");'
+  printf 'BEGIN{S[k=0]=0;split("",h,":");'
   cat
   printf 'exit(0);}'
 ;;(content)
-  printf 'function e(aa){k++;S[k]=S[k-1];for(aa=0;aa<S[k];aa++)S[k,aa]=S[k-1,aa];'
+  printf 'function e(B){k++;S[k]=S[k-1];for(B=0;aa<S[k];B++)S[k,B]=S[k-1,B];'
   cat
   printf 'd();}'
 ;;esac
@@ -450,59 +439,219 @@ tr -d \\n
 
 } # compile()
 
+# main I think
+
+: prelude && {
+awkscript='BEGIN{if(seed~".")srand(seed);else srand();}
+function P(D){S[k,K()]=D;S[k]++;}
+function E(){return K()==0;}
+function J(){return K()>1;}
+function K(){return S[k];}
+function T(){return S[k,K()-1];}
+function X(R){R=T();S[k]--;return R;}
+function u(C){if(!otty)print C;else if(-1<C&&C<256)system(sprintf("printf \\\\%o",C));}
+function G(R){if(un~/./){R=un;un="";return R;}if(!itty)return getline>0?$0:-1;if(NF!=0)return H();Z="cat|od -An -vtu1|tr -Cs 0123456789 \"[ *]\"|sed \"s/^ *//;s/ *$//\"|grep ^";R=(Z|getline>0)?H():-1;close(Z);return R;}
+function H(R){R=$1;sub("^[0-9]+$","");sub("^[0-9]+ ","");return R;}
+function U(C){un=C;}
+function A(M){print me ": " M|"cat 1>&2";exit 1;}'
+}
+
+: 'generate main routine' && {
+fnameprog="$(printf %s "${1##*/}" | compile)"
+awkscript="$awkscript$(printf %s "$fnameprog" | grep -v '#' | tr -d \\n)" 
+reqfn="$(
+  printf %s "$fnameprog" |
+  grep '#' |
+  tr -d '# \n'
+)"
+}
+
+case "$reqfn" in (*e*)
+
+test -f "$1" || test -c "$1" || test -p "$1" && {
+  test -r "$1" || {
+    printf %s\\n "${0##*/}: $1: Permission denied"
+    exit 1
+  }
+}
+contprog="$(cat "$1" | compile content)"
+awkscript="$awkscript$(printf %s "$contprog" | grep -v '#' | tr -d \\n)" 
+printf %s\\n "$contprog";
+reqfn="$reqfn$(
+  printf %s "$contprog" |
+  grep '#' |
+  tr -d '# \n'
+)"
+
+;;esac
+
+case "$reqfn" in (*f*)
+
+awkscript="${awkscript}function f(){$(
+  od -A n -t u1 -v <"$1" |
+  tr -Cs 0123456789 '[\n*]' |
+  grep . |
+  awk '$0=NR " " $0;' |
+  sort -k 1nr,1 |
+  sed 's/^[0-9]* \(.*\)$/P(\1);/' |
+  tr -d \\n
+)}"
+
+;;esac
+
 #
 # P(char) is push.
 # E() returns if empty.
 # J() returns if size >= 2.
-# T() is top.
-# X() is pop, with return of the value.
+# K() returns size.
+# T() is top. stupid.
+# X() is pop, with return of the value. stupid.
+#
 # k>=0. global. id of VM.
 # S. global stack. [k] or [k,i] where
 #   S[k] stores size
 #   S[k,i] stores items. 0<=i<S[k].
+#
 # h[k]. global heap. empty or integer
+#
 # u(char) is putchar().
+#   B is global output buffer.
 # G() is getchar().
+#   L is global input buffer if interactive mode.
+#   un is global unget buffer.
 # U(char) is ungetc().
+# H() is shift input buffer.
+#
 # A(str) is abort().
 #
 
-# define functions required by commands
-echo "$used_cmds" |
+: define functions required by commands && {
+awkscript="$awkscript$(
+echo "$reqfn" |
 fold -w 1 |
 sort |
 uniq |
 sed -n '
 # skip l; P() is enough
-/p/s//function p(i){while(!E())u(X());}/p
-/o/s//function o(i){if(!E())u(X());}/p
-/n/s//function n(i,x,d,l){if(!E()){x=X();l=length(x);for(i=1;i<=l;i++)u((d=substr(x,i,1))~"[0-9]"?d+48:45);}}/p
-/i/s//function i(){P(G());}/p
+/p/c\
+function p(){while(!E())u(X());}
+/o/c\
+function o(){if(!E())u(X());}
+/n/c\
+function n(I,q,D,l){if(!E()){q=X();l=length(q);for(I=1;I<=l;I++)u((D=substr(q,I,1))~"[0-9]"?D+48:45);}}
+/i/c\
+function i(){P(G());}
 /_/c\
-function _(m,c,s,x){\
-  m="._: Not a decimal integer input";c=G();s=1;for(;;){\
-    if(47<c&&c<58)break;if(c~"4[35]"){\
-      s=44-c;c=G();break;}\
-    if((8<c&&c<14)+(c==32)){c=G();continue;}A(m);}\
-  if((c<48)+(c>57))A(m);for(;47<c||c<58+;c=G())x=x (c-48);U(c);P(s*x);}
-/c/s//function c(){if(!E())P(T());}/p
-/s/s//function s(){if(!E())X();}/p
-/v/s//function v(i,j,t){for(i=0,j=S[k]-1;i<j;i++,j--){t=S[k,i];S[k,i]=S[k,j];S[k,j]=t;}}/p
-# skip f; somewhere
+function _(M,C,Z,Y){M="._: Not a decimal integer input";C=G();Z=1;for(;;){if(47<C&&C<58)break;if(C~"^4[35]$"){Z=44-C;C=G();break;}if((8<C&&C<14)+(C==32)){C=G();continue;}A(M);}if((C<48)+(C>57))A(M);for(;47<C||C<58;C=G())Y=Y (C-48);U(C);P(Z*Y);}
+/c/c\
+function c(){if(!E())P(T());}
+/s/c\
+function s(){if(!E())X();}
+/v/c\
+function v(I,J,T){for((I=0)||J=K()-1;I<J;I++,J--){T=S[k,I];S[k,I]=S[k,J];S[k,J]=T;}}
+# skip f; defined already
 # skip e; is defined on: compile content
 /r/c\
 function r(){if(!E()){if(rposonly&&T()<=0)A(".r: Undefined against non-positive item");P(int(rand()*X()));}}
-/w/s//function w(){return E()||(X()!=0);}/p
-/x/s//function x(a,b){if(E())return 1;a=X();b=X();return a<b;}/p
-/y/s//function y(a,b){if(E())return 1;a=X();b=X();return a>b;}/p
-/z/s//function z(a,b){if(E())return 1;a=X();b=X();return a==b;}/p
+/w/c\
+function w(){return E()||(X()!=0);}
+/x/c\
+function x(Q,q){if(!J())return 1;Q=X();q=X();return Q<q;}
+/y/c\
+function y(Q,q){if(!J())return 1;Q=X();q=X();return Q>q;}
+/z/c\
+function z(){return(!J()||X()==X());}
 # skip a; no function needed
-/t/s//function t(){if(!E())h[k]=X();}/p
-/m/s//function m(){if(k in h)P(h[k]);}/p
-/d/s//function d(i,j){if(k in h)delete h[k];k--;for(i=0,j=S[k];i<S[k+1];i++,j++,S[k]++)S[k,j]=S[k+1,i];}/p
-/+/s//function add(){if(J())P(X()+X());}/p
-/-/s//function sub(y){if(J()){y=X()-X();y=y<0?-y:y;P(y);}}/p
-/!/s//function mul(){if(J())P(X()*X());}/p
-/\$/s!!function div(x,y){if(J()){x=X();y=X();if(x*y==0)A(".$: Zero-division");P(int(x>y?x/y:y/x))!p
-/%/s!!function mod(x,y){if(J()){x=X();y=X();if(x*y==0)A(".$: Zero-division");P(int(x>y?x%y:y%x))!p
-'
+/t/c\
+function t(){if(!E())h[k]=X();}
+/m/c\
+function m(){if(k in h)P(h[k]);}
+/d/c\
+function d(I,J){if(k in h)delete h[k];k--;for((I=0)||J=S[k];I<S[k+1];(I++)||(J++)||(S[k]++))S[k,J]=S[k+1,I];}
+/+/c\
+function add(){if(J())P(X()+X());}
+/-/c\
+function sub(I){if(J()){P((I=X()-X())<0?-I:I;I);}}
+/!/c\
+function mul(){if(J())P(X()*X());}
+/\$/c\
+function div(q,l){if(J()){if((q=X())*(l=X())==0)A(".$: Zero-division");P(int(q>l?q/l:l/q))}}
+/%/c\
+function mod(q,l){if(J()){if((q=X())*(l=X())==0)A(".%: Zero-division");P(int(q>l?q%l:l%q))}}
+' | 
+tr -d \\n)" # awkscript
+
+} # define required functions
+
+#
+# required vars for awk.
+#   me. program name.
+#
+#   otty. 1 iff stdout is terminal.
+#         1. output by myself.
+#         0. leave final output to external.
+#
+#   itty. 1 iff stdin is terminal.
+#         1. call getchar()-like by myself.
+#
+#         0. let external to parse input.
+#
+#   seed. for srand().
+#
+#   rposonly. .r command option.
+#             1. let it be defined for >0 only.
+#             0. .r does "push int(rand()*pop())" for every value.
+
+# execute
+
+seed=
+case "$reqfn" in (*r*)
+  seed="$(
+    test -c /dev/urandom&&test -r /dev/urandom &&
+    od -A n -v -t d4 -N4 /dev/urandom ||
+    (ps -Ao pid,etime,pcpu,vsz;date) |
+    od -A n -v -t u4 |
+    tr -Cs 0123456789 '[\n*]' |
+    grep . | tail -n 42 |
+    sed 's/.*\(.\{8\}\)$/\1/' |
+    awk -v a=-2147483648 '{a+=$0;}END{print a;}'
+  )"
+;;esac
+
+case "$reqfn" in (*[i_]*)
+  # XXX. captive way of inputting?
+  # WHAT. XXX. is it impossible without TEMPORARY FILE FOR SIGNAL HANDLING?
+  # what. when filename is XX.z.d.a.i and input is from od, then it terminates automatically.
+  # But if .iXX.z.d.a.i, EOF by myself plz.
+  if ! : test -t 0; then
+    awk -v seed="$seed" -v otty=1 -v itty=1 "$awkscript"
+  else
+    # input here
+    od -A n -v -t u1 | tr -Cs 0123456789 '[\n*]' | grep . |
+    # actual interpreter here
+    awk -v seed="$seed" -v otty=0 -v itty=0 "$awkscript" |
+    # outputter
+    awk -v q="'" -v ORS='' -v sep='' '
+      BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
+      # 4*50=200. 200+7+1+2=210.
+      NR%50==1{print sep "printf " q;sep=q "\n";}
+      {print c[$0];}
+      END{if(sep)print q "\n";}
+    ' |
+    # i hate xargs.
+    sh -s
+  fi
+;;(*)
+  # actual interpreter here
+  awk -v seed="$seed" -v otty=0 "$awkscript" |
+  # outputter
+  awk -v q="'" -v ORS='' -v sep='' '
+    BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
+    # 4*50=200. 200+7+1+2=210.
+    NR%50==1{print sep "printf " q;sep=q "\n";}
+    {print c[$0];}
+    END{if(sep)print sep;}
+  ' |
+  # i hate xargs.
+  sh -s
+;;esac
