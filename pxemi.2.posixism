@@ -313,23 +313,25 @@ BEGIN{
 }
 prev~"l"&&/l/{
    # join two literal commands
-   prog[i-2]=prev substr($0,3);
-   i-=1;
+   prog[i-2]=prev " " substr($0,3);
+   delete prog[i-=1];
    next;
 }
 prev~"^l [^ ]+"&&/c/{
    sub("[^ ]+$","& &",prog[i-2]);
-   i-=1;
+   delete prog[i-=1];
    next;
 }
 prev~"^l [^ ]+$"&&/s/{
    # just discard it when single literal
    i-=2;
+   delete prog[i];
+   delete prog[i+1];
    next;
 }
 prev~"l"&&/s/{
    sub(" [^ ]+$","",prog[i-2]);
-   i-=1;
+   delete prog[i-=1];
    next;
 }
 prev~"^l [^ ]+ [^ ]+"&&/[+!$%-]/{
@@ -338,10 +340,10 @@ prev~"^l [^ ]+ [^ ]+"&&/[+!$%-]/{
    if(/[$%]/&&prev~"( 0| 0 [^ ]+)$") next;
    
    # extract two nums on top
-   x=y=prev;
+   op=$0; $0=prev;
+   x=$NF; y=$(NF-1);
    sub(" [^ ]+ [^ ]+$","",prev);
-   sub("^.* ","",x);
-   sub(" [^ ]+$","",y); sub("^.* ","",y);
+   $0=op;
    # make it sure: x>=y
    if(x<=y){
       _x=x; x=y; y=_x;
@@ -353,7 +355,7 @@ prev~"^l [^ ]+ [^ ]+"&&/[+!$%-]/{
    if(/!/) prog[i-2]=prev " " (x*y);
    if(/\$/) prog[i-2]=prev " " int(x/y);
    if(/%/) prog[i-2]=prev " " int(x%y);
-   i-=1;
+   delete prog[i-=1];
    next;
 }
 END{
@@ -413,7 +415,7 @@ t
 # arithmetics because function name restrictions
 /+/s//add();/p
 t
-/-/s//sub();/p
+/-/s//sbt();/p
 t
 /!/s//mul();/p
 t
@@ -428,7 +430,7 @@ s/.*/WTF("&");/p
 case "$1" in (fname)
   printf 'BEGIN{S[k=0]=0;split("",h,":");'
   cat
-  printf 'exit(0);}'
+  printf '}'
 ;;(content)
   printf 'function e(B){k++;S[k]=S[k-1];for(B=0;aa<S[k];B++)S[k,B]=S[k-1,B];'
   cat
@@ -458,7 +460,7 @@ function A(M){print me ": " M|"cat 1>&2";exit 1;}'
 
 : 'generate main routine' && {
 fnameprog="$(printf %s "${1##*/}" | compile)"
-awkscript="$awkscript$(printf %s "$fnameprog" | grep -v '#' | tr -d \\n)" 
+awkscript="$awkscript$(printf %s "$fnameprog" | grep -v '#')" 
 reqfn="$(
   printf %s "$fnameprog" |
   grep '#' |
@@ -475,7 +477,7 @@ test -f "$1" || test -c "$1" || test -p "$1" && {
   }
 }
 contprog="$(cat "$1" | compile content)"
-awkscript="$awkscript$(printf %s "$contprog" | grep -v '#' | tr -d \\n)" 
+awkscript="$awkscript$(printf %s "$contprog" | grep -v '#')" 
 printf %s\\n "$contprog";
 reqfn="$reqfn$(
   printf %s "$contprog" |
@@ -493,8 +495,7 @@ awkscript="${awkscript}function f(){$(
   grep . |
   awk '$0=NR " " $0;' |
   sort -k 1nr,1 |
-  sed 's/^[0-9]* \(.*\)$/P(\1);/' |
-  tr -d \\n
+  sed 's/^[0-9]* \(.*\)$/P(\1);/'
 )}"
 
 ;;esac
@@ -542,7 +543,7 @@ function n(I,q,D,l){if(!E()){q=X();l=length(q);for(I=1;I<=l;I++)u((D=substr(q,I,
 /i/c\
 function i(){P(G());}
 /_/c\
-function _(M,C,Z,Y){M="._: Not a decimal integer input";C=G();Z=1;for(;;){if(47<C&&C<58)break;if(C~"^4[35]$"){Z=44-C;C=G();break;}if((8<C&&C<14)+(C==32)){C=G();continue;}A(M);}if((C<48)+(C>57))A(M);for(;47<C||C<58;C=G())Y=Y (C-48);U(C);P(Z*Y);}
+function _(M,C,Z,Y){M="._: Not a decimal integer input";C=G();Z=1;for(;;){if(47<C&&C<58)break;if(C~"^4[35]$"){Z=44-C;C=G();break;}if((8<C&&C<14)+(C==32)){C=G();continue;}A(M);}if((C<48)+(C>57))A(M);for(;47<C&&C<58;C=G())Y=Y (C-48);U(C);P(Z*Y);}
 /c/c\
 function c(){if(!E())P(T());}
 /s/c\
@@ -560,7 +561,7 @@ function x(Q,q){if(!J())return 1;Q=X();q=X();return Q<q;}
 /y/c\
 function y(Q,q){if(!J())return 1;Q=X();q=X();return Q>q;}
 /z/c\
-function z(){return(!J()||X()==X());}
+function z(){return((!J())||(X()!=X()));}
 # skip a; no function needed
 /t/c\
 function t(){if(!E())h[k]=X();}
@@ -571,15 +572,14 @@ function d(I,J){if(k in h)delete h[k];k--;for((I=0)||J=S[k];I<S[k+1];(I++)||(J++
 /+/c\
 function add(){if(J())P(X()+X());}
 /-/c\
-function sub(I){if(J()){P((I=X()-X())<0?-I:I;I);}}
+function sbt(I){if(J()){P((I=X()-X())<0?-I:I);}}
 /!/c\
 function mul(){if(J())P(X()*X());}
 /\$/c\
 function div(q,l){if(J()){if((q=X())*(l=X())==0)A(".$: Zero-division");P(int(q>l?q/l:l/q))}}
 /%/c\
 function mod(q,l){if(J()){if((q=X())*(l=X())==0)A(".%: Zero-division");P(int(q>l?q%l:l%q))}}
-' | 
-tr -d \\n)" # awkscript
+')" # awkscript
 
 } # define required functions
 
