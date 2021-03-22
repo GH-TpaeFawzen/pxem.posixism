@@ -432,7 +432,7 @@ case "$1" in (fname)
   cat
   printf '}'
 ;;(content)
-  printf 'function e(B){k++;S[k]=S[k-1];for(B=0;aa<S[k];B++)S[k,B]=S[k-1,B];'
+  printf 'function e(B){k++;S[k]=S[k-1];for(B=0;B<S[k];B++)S[k,B]=S[k-1,B];'
   cat
   printf 'd();}'
 ;;esac
