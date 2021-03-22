@@ -84,7 +84,7 @@ optlv=99
 #
 # compile. filter function.
 # usage.
-#   printf "%s" ${FILE##*/}" | compile fname
+#   printf "%s" ${FILE##*/}" | compile [fname]
 #   cat "$FILE" | compile content
 #
 # stdout. 
@@ -102,6 +102,14 @@ case "$1" in (fname|content) :
 ;;(*) echo 'Usage: compile {fname|content}' 1>&2; return 80
 ;;esac
 
+assembly="$(
+
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+awk -v dot=46 '
+BEGIN{
+
 # mktbl="$(
 #   printf 'pPoOnNiI_cCsSvVfFeErRwWxXyYzZaAtTmMdD+-!$%%' |
 #   od -A n -t u1 -v |
@@ -112,13 +120,6 @@ case "$1" in (fname|content) :
 #   '
 # )"
 
-assembly="$(
-
-od -A n -t u1 -v |
-tr -Cs 0123456789 '[\n*]' |
-grep . |
-awk -v dot=46 '
-BEGIN{
    cmd["112"]="p";cmd["80"]="p";
    cmd["111"]="o";cmd["79"]="o";
    cmd["110"]="n";cmd["78"]="n";
@@ -193,7 +194,7 @@ function emitliterate(){
 }
 ' |
 # check syntax
-# opt1. remove deadcode (from .d to EOF or matching .a)
+# also opt1. remove deadcode (from .d to EOF or matching .a)
 awk -v me="${0##*/}" -v optlv="$optlv" '
 BEGIN{
    nest=0;
@@ -250,9 +251,11 @@ awk \
   )" \
   -v heap_used=0 '
 /[poncsvrt+!$%-]/&&surely&&assumed_size==0{
+   # remove here
    next;
 }
 /[+!$%-]/&&surely&&assumed_size==1{
+   # remove here
    next;
 }
 /l/&&surely{
@@ -371,10 +374,7 @@ END{
 
 # this is to determine what functions are required.
 printf %s\\n "$assembly" |
-cut -c 1 |
-sort |
-uniq |
-tr -d \\n |
+cut -c 1 | sort | uniq | tr -d \\n |
 case "$1" in (fname) tr -d d ;;(content) cat ;;esac |
 grep . | sed 's/^/# /'
 
@@ -401,10 +401,11 @@ sed -n '
 t
 /[wxyz]/s//while(&()){/p
 t
+# no a function
 /a/s//}/p
 t
-'"$(
 # d needs some branching
+'"$(
 case "$1" in (fname)
   echo '/d/s//exit(0);/p'
 ;;(content)
@@ -432,6 +433,7 @@ case "$1" in (fname)
   cat
   printf '}'
 ;;(content)
+  # B local variable. just an index.
   printf 'function e(B){k++;S[k]=S[k-1];for(B=0;B<S[k];B++)S[k,B]=S[k-1,B];'
   cat
   printf 'd();}'
@@ -444,7 +446,35 @@ tr -d \\n
 # main I think
 
 : prelude && {
-awkscript='BEGIN{if(seed~".")srand(seed);else srand();}
+#
+# k>=0. global. id of VM.
+# S. global stack. [k] or [k,i] where
+#   S[k] stores size
+#   S[k,i] stores items. 0<=i<S[k].
+#
+# h[k]. global heap. empty or integer
+#
+# P(char) is push.
+# E() returns if empty.
+# J() returns if size >= 2.
+# K() returns size.
+# T() is top. stupid.
+# X() is pop, with return of the value. stupid.
+#
+# u(char) is putchar().
+# G() is getchar().
+#   un is global unget buffer.
+# U(char) is ungetc().
+# H() is shift input buffer. for interactive mode.
+#
+# A(str) is abort().
+#
+# also sorry for abuse of one-char local vars;
+# i want to make final code shorter, and sorry for
+# random var names; to avoid sharing name with functions.
+# GAWK is the good example that same namespace.
+#
+awkscript='BEGIN{if(seed~".")srand(seed);}
 function P(D){S[k,K()]=D;S[k]++;}
 function E(){return K()==0;}
 function J(){return K()>1;}
@@ -468,7 +498,7 @@ reqfn="$(
 )"
 }
 
-case "$reqfn" in (*e*)
+: plz check iff e and f are required && {
 
 test -f "$1" || test -c "$1" || test -p "$1" && {
   test -r "$1" || {
@@ -476,6 +506,12 @@ test -f "$1" || test -c "$1" || test -p "$1" && {
     exit 1
   }
 }
+
+}
+
+: e cmd to generate subroutine &&
+case "$reqfn" in (*e*)
+
 contprog="$(cat "$1" | compile content)"
 awkscript="$awkscript$(printf %s "$contprog" | grep -v '#')" 
 printf %s\\n "$contprog";
@@ -487,10 +523,12 @@ reqfn="$reqfn$(
 
 ;;esac
 
+: f cmd &&
 case "$reqfn" in (*f*)
 
 awkscript="${awkscript}function f(){$(
-  od -A n -t u1 -v <"$1" |
+  cat "$1" |
+  od -A n -t u1 -v |
   tr -Cs 0123456789 '[\n*]' |
   grep . |
   awk '$0=NR " " $0;' |
@@ -500,54 +538,28 @@ awkscript="${awkscript}function f(){$(
 
 ;;esac
 
-#
-# P(char) is push.
-# E() returns if empty.
-# J() returns if size >= 2.
-# K() returns size.
-# T() is top. stupid.
-# X() is pop, with return of the value. stupid.
-#
-# k>=0. global. id of VM.
-# S. global stack. [k] or [k,i] where
-#   S[k] stores size
-#   S[k,i] stores items. 0<=i<S[k].
-#
-# h[k]. global heap. empty or integer
-#
-# u(char) is putchar().
-#   B is global output buffer.
-# G() is getchar().
-#   L is global input buffer if interactive mode.
-#   un is global unget buffer.
-# U(char) is ungetc().
-# H() is shift input buffer.
-#
-# A(str) is abort().
-#
-
 : define functions required by commands && {
 awkscript="$awkscript$(
-echo "$reqfn" |
-fold -w 1 |
-sort |
-uniq |
+echo "$reqfn" | fold -w 1 | sort | uniq |
 sed -n '
 # skip l; P() is enough
 /p/c\
 function p(){while(!E())u(X());}
 /o/c\
 function o(){if(!E())u(X());}
+# n(Iterator,q:popped value,Digit,l: digits of q)
 /n/c\
 function n(I,q,D,l){if(!E()){q=X();l=length(q);for(I=1;I<=l;I++)u((D=substr(q,I,1))~"[0-9]"?D+48:45);}}
 /i/c\
 function i(){P(G());}
+# _(error Message,Char to get,Z: sign, Y: digits)
 /_/c\
 function _(M,C,Z,Y){M="._: Not a decimal integer input";C=G();Z=1;for(;;){if(47<C&&C<58)break;if(C~"^4[35]$"){Z=44-C;C=G();break;}if((8<C&&C<14)+(C==32)){C=G();continue;}A(M);}if((C<48)+(C>57))A(M);for(;47<C&&C<58;C=G())Y=Y (C-48);U(C);P(Z*Y);}
 /c/c\
 function c(){if(!E())P(T());}
 /s/c\
 function s(){if(!E())X();}
+# v(Iterator,J: iterator,Temp)
 /v/c\
 function v(I,J,T){for((I=0)||J=K()-1;I<J;I++,J--){T=S[k,I];S[k,I]=S[k,J];S[k,J]=T;}}
 # skip f; defined already
@@ -583,6 +595,8 @@ function mod(q,l){if(J()){if((q=X())*(l=X())==0)A(".%: Zero-division");P(int(q>l
 
 } # define required functions
 
+# finally we are executing awk script.
+
 #
 # required vars for awk.
 #   me. program name.
@@ -602,8 +616,6 @@ function mod(q,l){if(J()){if((q=X())*(l=X())==0)A(".%: Zero-division");P(int(q>l
 #             1. let it be defined for >0 only.
 #             0. .r does "push int(rand()*pop())" for every value.
 
-# execute
-
 seed=
 case "$reqfn" in (*r*)
   seed="$(
@@ -622,7 +634,7 @@ case "$reqfn" in (*[i_]*)
   # XXX. captive way of inputting?
   # WHAT. XXX. is it impossible without TEMPORARY FILE FOR SIGNAL HANDLING?
   # what. when filename is XX.z.d.a.i and input is from od, then it terminates automatically.
-  # But if .iXX.z.d.a.i, EOF by myself plz.
+  # But if .iXX.z.d.a.i, you need to enter EOF by yourself.
   if ! : test -t 0; then
     awk -v seed="$seed" -v otty=1 -v itty=1 "$awkscript"
   else
