@@ -559,9 +559,9 @@ function _(M,C,Z,Y){M="._: Not a decimal integer input";C=G();Z=1;for(;;){if(47<
 function c(){if(!E())P(T());}
 /s/c\
 function s(){if(!E())X();}
-# v(Iterator,J: iterator,Temp)
+# v(Iterator,j: iterator,V: temp)
 /v/c\
-function v(I,J,T){for((I=0)||J=K()-1;I<J;I++,J--){T=S[k,I];S[k,I]=S[k,J];S[k,J]=T;}}
+function v(I,j,V){for((I=0)||j=K()-1;I<j;I++,j--){V=S[k,I];S[k,I]=S[k,j];S[k,j]=V;}}
 # skip f; defined already
 # skip e; is defined on: compile content
 /r/c\
@@ -580,7 +580,7 @@ function t(){if(!E())h[k]=X();}
 /m/c\
 function m(){if(k in h)P(h[k]);}
 /d/c\
-function d(I,J){if(k in h)delete h[k];k--;for((I=0)||J=S[k];I<S[k+1];(I++)||(J++)||(S[k]++))S[k,J]=S[k+1,I];}
+function d(I,j){if(k in h)delete h[k];k--;for((I=0)||j=S[k];I<S[k+1];(I++)||(j++)||(S[k]++))S[k,j]=S[k+1,I];}
 /+/c\
 function add(){if(J())P(X()+X());}
 /-/c\
