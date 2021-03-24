@@ -107,9 +107,6 @@ assembly="$(
 od -A n -t u1 -v |
 tr -Cs 0123456789 '[\n*]' |
 grep . |
-awk -v dot=46 '
-BEGIN{
-
 # mktbl="$(
 #   printf 'pPoOnNiI_cCsSvVfFeErRwWxXyYzZaAtTmMdD+-!$%%' |
 #   od -A n -t u1 -v |
@@ -119,7 +116,8 @@ BEGIN{
 #     {printf"cmd\"%d\"=\"%c\";",$0,tolower(sprintf("%c",$0));}
 #   '
 # )"
-
+awk -v dot=46 '
+BEGIN{
    cmd["112"]="p";cmd["80"]="p";
    cmd["111"]="o";cmd["79"]="o";
    cmd["110"]="n";cmd["78"]="n";
@@ -561,7 +559,7 @@ function c(){if(!E())P(T());}
 function s(){if(!E())X();}
 # v(Iterator,j: iterator,V: temp)
 /v/c\
-function v(I,j,V){for((I=0)||j=K()-1;I<j;I++,j--){V=S[k,I];S[k,I]=S[k,j];S[k,j]=V;}}
+function v(I,j,V){I=0;for(j=K()-1;I<j;){V=S[k,I];S[k,I++]=S[k,j];S[k,j--]=V;}}
 # skip f; defined already
 # skip e; is defined on: compile content
 /r/c\
