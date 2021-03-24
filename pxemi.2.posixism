@@ -221,7 +221,7 @@ BEGIN{
             }
             nest+=/[wxyz]/-/a/;
          }
-         print "a";
+         print "a @ " nest+1;
       }
    }
    if(nest>0){
