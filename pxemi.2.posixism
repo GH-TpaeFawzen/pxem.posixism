@@ -384,6 +384,8 @@ sed 's/ @ .*$//'
 
 # finally translate to awk
 printf %s\\n "$assembly" |
+# remove if empty
+grep . |
 sed -n '
 # l has some arguments
 # P(char) is push.
@@ -578,7 +580,7 @@ function t(){if(!E())h[k]=X();}
 /m/c\
 function m(){if(k in h)P(h[k]);}
 /d/c\
-function d(I,j){if(k in h)delete h[k];k--;for((I=0)||j=S[k];I<S[k+1];(I++)||(j++)||(S[k]++))S[k,j]=S[k+1,I];}
+function d(I,j){if(k in h)delete h[k];k--;I=0;for(j=S[k];I<S[k+1];(I++)*(j++)*(S[k]++))S[k,j]=S[k+1,I];}
 /+/c\
 function add(){if(J())P(X()+X());}
 /-/c\
