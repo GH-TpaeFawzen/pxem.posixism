@@ -118,6 +118,7 @@ grep . |
 # )"
 awk -v dot=46 '
 BEGIN{
+   # valid command table.
    cmd["112"]="p";cmd["80"]="p";
    cmd["111"]="o";cmd["79"]="o";
    cmd["110"]="n";cmd["78"]="n";
@@ -142,55 +143,38 @@ BEGIN{
    cmd["33"] ="!";
    cmd["36"] ="$";
    cmd["37"] ="%";
+   # stores literal items.
    split("",stack,":");
+   # level for stack. items in 0<=i<=stack-1.
    level=0;
-   first=second="";
-   for(;;){
-      if(getline first<=0) break;
-      if(getline second<=0) second="";
-      
-      # /\.[pPoO...]/
-      if(second in cmd && first==dot){
-         emitliterate();
+}
+{
+   stack[level]=$0;
+   level+=1;
+   if(level>=2){
+      first=stack[level-2];
+      second=stack[level-1];
+      if(first==dot&&second in cmd){
+         level-=2;
+         if(level>0){
+            printf"l";
+            for(i=level-1;i>=0;i--)
+               printf" " stack[i];
+            print"";
+            level=0;
+         }
          print cmd[second];
       }
-      # /.\./
-      else if(second==dot){
-         while(second==dot){
-            pushliterate(first);
-            first=second;
-            if(getline second<=0){
-               pushliterate(first);
-               emitliterate();
-               exit 0;
-            }
-         }
-         if(second in cmd){
-            emitliterate();
-            print cmd[second];
-         }
-      }
-      else{
-         pushliterate(first);
-         pushliterate(second);
-      }
    }
-   emitliterate();
 }
-function pushliterate(c){
-   if(c=="") return;
-   stack[level]=c;
-   level+=1;
-}
-function emitliterate(){
-   # literate shall be pushed in reverse order
-   if(level==0) return;
-   printf "l";
-   for(;level>0;level-=1)
-      printf " " stack[level-1];
-   print "";
-}
-' |
+END{
+   if(level>0){
+      printf"l";
+      for(i=level-1;i>=0;i--)
+         printf" " stack[i];
+      print"";
+   }
+}' |
 # check syntax
 # also opt1. remove deadcode (from .d to EOF or matching .a)
 awk -v me="${0##*/}" -v optlv="$optlv" '
