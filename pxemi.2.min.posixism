@@ -13,9 +13,8 @@ FNAME=
 CONTENT=
 # </body>
 # <footer>
-printf "$FNAME"|compile f
-printf "$CONTENT"|compile c
+FNAME="$(printf %s\\n "$FNAME"|sed s/%/%%/g)";CONTENT="$(printf %s\\n "$CONTENT")";printf "$FNAME"|compile f;printf "$CONTENT"|compile c
 printf "$FNAME"|wc -c>&2
 printf "$CONTENT"|wc -c>&2
 printf "function f(){$(printf "$CONTENT"|od -An -vtu1|tr -Cs '[0-9]' '[\n*]'|grep .|awk '$0=NR FS $0'|sort -k 1nr,1|sed 's/^.* \(.*\)$/P(\1);/')}")";sd="$([ -c /dev/urandom ]&&[ -r /dev/urandom ]&&od -An -vtd4 -N4 /dev/urandom||(ps -Ao pid,etime,pcpu,vsz;date)|od -An -vtu4|tr -Cs '[0-9]' '[\n*]'|grep .|tail -n42|sed 's/.*\(.\{8\}\)$/\1/;1s/^/-2147483648+/;$!s/$/+\\/'|bc)";od -An -vtu1|tr -Cs '[0-9]' '[\n*]'|grep .|awk -v sd="$sd" "$src"|awk -v q=\' -v ORS= 'BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i)}/!/{if(s)print q RS;s=0;print"exit 1";exit}NR%50==1{print s "printf " q;s=q RS}{print c[$0]}END{if(s)print q RS}'|sh -s
-# </footer>
+# <footer>
