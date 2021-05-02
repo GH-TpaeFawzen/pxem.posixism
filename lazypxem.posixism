@@ -1,0 +1,618 @@
+#!/bin/sh
+
+# lazypxem.posixism. Non-strict Pxem interpreter.
+# Written by TpaeFawzen.
+# License. CC0.
+
+set -eu # -e is for syntax error
+umask 0022
+export LC_ALL=C
+type getconf >/dev/null 2>&1 &&
+type command >/dev/null 2>&1 &&
+export PATH="$(command -p getconf PATH)${PATH+:}${PATH-}"
+export UNIX_STD=2003 # for HP-UX
+export POSIXLY_CORRECT=1 # for GNU utils, bash, pdksh
+case "${BASH_VERSION:+y}" in (y)
+  set -o posix
+  set +B # disable echo {a,s,d} to be echo a s d
+;;esac
+case "${ZSH_VERSION:+y}" in (y)
+  emulate sh
+  setopt shwordsplit
+  alias -g '${1+"$@"}'='"$@"'
+  NULLCMD=:
+;;esac
+# reject svr2 bourne
+case "$(
+  ( set dummy; shift; set dummy "$@"; shift; echo $# )
+)" in (1)
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+;;esac
+# reject svr4 bourne
+eval "! false" || {
+  printf %s\\n "${0##*/}: Please use newer POSIX-compatible shell."
+  exit 1
+}
+# can I separate commands in sed with semicolons instead of LFs?
+case "$(echo x|sed 's/x/y/;s/y/z/')" in (z)
+  :
+;;(*)
+  ! echo sed2old>&2
+;;esac
+
+usagex(){
+  printf %s\\n "Usage: ${0##*/} FILE" 1>&2
+  exit 1
+}
+
+case "$# ${1:+$1}" in ('1 -?'|'1 -h'|'1 --help')
+  usagex
+;;esac
+while case "$#" in (0) ! :;; (*) :;; esac; do
+  case "$1" in (--) shift; break;; esac
+  case "$1" in (-*) usagex;; esac
+  break
+done
+case "$#" in ([!1]*|1?*) usagex;; esac
+
+errorx(){
+  printf %s\\n "${0##*/}: $2"
+  exit $1
+}
+case "$1" in ('')
+  errorx 1 'Filename cannot be empty'
+;;(-*)
+  set -- "./$1"
+;;esac
+
+# $1 should be fname.
+
+# NOT main yet. SORRY POSIXists.
+
+:<<-'SEMANTICS'
+xxx
+  empty
+  xxx push
+  xxx [^wxyzad] 
+
+program
+  program_ eof 
+
+program_
+  safe
+  unsafe 
+
+safe
+  safe_
+  safe_ d program_ 
+
+safe_
+  xxxx
+  safe_ [wxyz] safe__ a
+  safe_ xxxx 
+
+safe__
+  xxxx
+  [wxyz] safe__ a
+  safe__ d xxxx 
+
+unsafe
+  unsafe1
+  unsafe2 
+
+unsafe1
+  safe_ a program_ 
+
+unsafe2
+  safe_ [wxyz] safe_ d safe_
+  safe_ [wxyz] safe_
+  safe_ [wxyz] unsafe2 
+
+Semantics.
+program to intermediate. 
+
+safe_ d program_ eof to safe_ d 
+
+xxx eof to xxx d
+xxx to xxx
+safe_ [wxyz] safe__ a eof to safe_ [wxyz] safe__ ![wxyz] d
+safe_ [wxyz] safe__ a to safe_ [wxyz] safe__ ![wxyz] 
+
+xxx to xxx
+[wxyz] safe__ a to [wxyz] safe__ ![wxyz]
+[wxyz] safe__ d safe__ a to [wxyz] safe__ d 
+
+safe_ a program_ to safe_ A 
+
+safe_ [wxyz] safe_ d safe_ to safe_ [wxyz] safe_ d A
+safe_ [wxyz] safe_ to safe_ [wxyz] safe_ d A
+safe_ [wxyz] unsafe2 to safe_ [wxyz] unsafe A 
+
+intermediate
+  d
+  A
+  xxx intermediate
+  [wxyz] intermediate_ [dA] intermediate
+  [wxyz] intermediate_ ![wxyz] intermediate 
+
+intermediate_
+  xxx
+  [wxyz] intermediate_ ![wxyz] intermediate_
+  [wxyz] intermediate_ d intermediate_
+  xxx intermediate_
+
+SEMANTICS
+
+#
+# compile. filter function.
+# usage.
+#   printf "%s" ${FILE##*/}" | compile [fname]
+#   cat "$FILE" | compile content
+#
+# stdout. 
+#   AWK subprogram.
+#
+# required variables.
+#   optlv. optimization level in >=0 integer. see above.
+#
+compile(){
+od -A n -t u1 -v |
+tr -Cs 0123456789 '[\n*]' |
+grep . |
+#
+# to mnemonic
+#   literals: [0-9]+
+#   others: [poni_csvferwxyzatmd+!$%-]
+#
+sed '
+# hi dot (46)
+/^46$/{
+  :tilcmd
+  $b
+  N
+  /\n46$/{
+    P
+    s/^..\n//
+    btilcmd
+  }
+# valid commands should come here
+  s/^..[^0-9]112$/p/;t;s/^..[^0-9]80$/p/;t
+  s/^..[^0-9]111$/o/;t;s/^..[^0-9]79$/o/;t
+  s/^..[^0-9]110$/n/;t;s/^..[^0-9]78$/n/;t
+  s/^..[^0-9]105$/i/;t;s/^..[^0-9]73$/i/;t;
+   s/^..[^0-9]95$/_/;t;
+   s/^..[^0-9]99$/c/;t;s/^..[^0-9]67$/c/;t;
+  s/^..[^0-9]115$/s/;t;s/^..[^0-9]83$/s/;t;
+  s/^..[^0-9]118$/v/;t;s/^..[^0-9]86$/v/;t;
+  s/^..[^0-9]102$/f/;t;s/^..[^0-9]70$/f/;t;
+  s/^..[^0-9]101$/e/;t;s/^..[^0-9]69$/e/;t;
+  s/^..[^0-9]114$/r/;t;s/^..[^0-9]82$/r/;t;
+  s/^..[^0-9]119$/w/;t;s/^..[^0-9]87$/w/;t;
+  s/^..[^0-9]120$/x/;t;s/^..[^0-9]88$/x/;t;
+  s/^..[^0-9]121$/y/;t;s/^..[^0-9]89$/y/;t;
+  s/^..[^0-9]122$/z/;t;s/^..[^0-9]90$/z/;t;
+   s/^..[^0-9]97$/a/;t;s/^..[^0-9]65$/a/;t;
+  s/^..[^0-9]116$/t/;t;s/^..[^0-9]84$/t/;t;
+  s/^..[^0-9]109$/m/;t;s/^..[^0-9]77$/m/;t;
+  s/^..[^0-9]100$/d/;t;s/^..[^0-9]68$/d/;t;
+  s/^..[^0-9]43$/+/;t;
+  s/^..[^0-9]45$/-/;t;
+  s/^..[^0-9]33$/!/;t;
+  s/^..[^0-9]36$/$/;t;
+  s/^..[^0-9]37$/%/;t;
+}
+' |
+#
+# avoid empty program
+#
+{ cat; echo d; } |
+#
+# literals must be pushed in reverse order, so
+# reversing sequence of them
+#
+sed '
+/[0-9]/{
+   G
+   $b
+   x
+   d
+}
+/[0-9]/!{
+   G
+   s/^\(.\)\(\n\)\(.*\)$/\3\2\1/
+   x
+   s/.*//
+   x
+}
+' |
+grep . |
+#
+# make groups, by making them in same row,
+# separating each command with space
+#   xxxx [wxyzad]
+#   xxxx eof (to xxxx d)
+#
+sed '
+:load
+$!{
+   /[wxyzad]/!{
+      N
+      bload
+   }
+}
+y/\n/ /
+/[^wxyzad]$/s/$/ d/
+' |
+grep . |
+#
+# group to label group
+#   label is /^@@*\(,@@*\)$/
+# also reducing loops with d command and d and a on outside of loop
+#
+sed -n '
+G
+s/^\([^@,]*\)\n\([@,]*\)$/\2@ \1/
+h
+s/^\([@,]*\) .*$/\1/
+x
+/[wxyz]/{
+   p
+   x
+   s/$/,/
+   x
+   b
+}
+/a/{
+# capitalize to distinguish
+   /,/!{
+      s/a/A/p
+      bQcmd
+   }
+   /,/{
+      p
+      x
+      s/,@*$//
+      x
+      b
+   }
+}
+/d/{
+# capitalize to distinguish
+   /,/!{
+      s/d/D/p
+      bQcmd
+   }
+   /,/{
+      x
+      s/,@*$//
+      x
+      s/d/D/p
+      s/.*//
+# reduce plz
+      :red
+      ${
+# add aborts
+         x
+         s/$/@ A/p
+         :Aborts
+         s/,@* A$/@ A/p
+         tAborts
+         d
+      }
+      $!N
+      s/\n[ -z]*d$//
+      tred
+      s/\n[ -z]*\([wxyza]\)$/\2/
+# capitalization for distinguishment
+      s/\na$//p
+      t
+      s/[wxyz]a//
+      tred
+   }
+}
+b
+
+:Qcmd
+$!N
+s/\n.*$//
+tQcmd
+' |
+grep .|
+#
+# A: abort
+# D: return
+# a: needs hints
+#   w xxxx a to w xxxx aw, and so on
+#
+sed '
+/[wxyz]/H
+/[DA]/{
+   x
+   s/^\(.*\)\n.*$/\1/
+   x
+}
+/a/{
+   G
+   s/\n.*\n.*\([wxyz]\)$/\1/
+   x
+   s/^\(.*\)\n.*$/\1/
+   x
+}
+' |
+#
+# so, we shall convert everything to AWK
+#
+sed '
+s/^\([@,]*\) /if(label=="\1"){/
+s/\([poni_csvfertm+!$%-]\) /\1();/g
+s/\([0-9]\{1,\}\) /P(\1);/g
+s/a\([wxyz]\)$/sub(",@*$",\1()?",@":"@",label)}/
+s/\([wxyz]\)$/sub("$",\1()?",@":"@",label)}/
+s/D$/break}/
+s/A$/A()}/
+' |
+#
+# AWK does not let you use invalid named functions
+# let arithmetics name be those whom are not Pxem commands
+#
+sed '
+s/+()/b(1)/
+s/-()/b(-1)/
+s/!()/b(0)/
+s/$()/q(0)/
+s/%()/q(1)/
+' | {
+  echo 'S[k]=0;for(label="@";;){'
+  cat
+  echo '}'
+}
+
+} # compile()
+
+! : debug && {
+
+while IFS= read -r fname; do
+  printf %s\\n "$fname"
+  printf "$fname" | compile;echo
+done <<-'FNAME'
+hello, world!.pxe
+.w.o.i.c\001.+.a.p
+.wkdoek.dxowj.p
+mjachkie.a
+mjachkie.y
+.a.a.a
+.zcjsksk.zkqkks.zxyz.dxxx.a9.wxxx.a
+.e....x
+
+.w.w.w.a.w.a.w.a.a.a
+FNAME
+
+exit $?
+}
+
+# main I think
+
+: prelude && {
+#
+# k>=0. global. id of VM.
+# S. global stack. [k] or [k,i] where
+#   S[k] stores size
+#   S[k,i] stores items. 0<=i<S[k].
+#
+# h[k]. global heap. empty or integer
+#
+# P(char) is push.
+# E() returns if empty.
+# J() returns if size >= 2.
+# K() returns size.
+# T() is top. stupid.
+# X() is pop, with return of the value. stupid.
+#
+# u(char) is putchar().
+# G() is getchar().
+#   un is global unget buffer.
+# U(char) is ungetc().
+# H() is shift input buffer. for interactive mode.
+#
+# A(str) is abort().
+#
+# also sorry for abuse of one-char local vars;
+# i want to make final code shorter, and sorry for
+# random var names; to avoid sharing name with functions.
+# GAWK is the good example that same namespace.
+#
+awkscript='BEGIN{if(+seed)srand(seed)}
+function P(D){S[k,K()]=D;S[k]++}
+function E(){return !+K()}
+function J(){return K()>1}
+function K(){return S[k]}
+function T(){return S[k,K()-1]}
+function X(R){R=T();S[k]--;return R}
+
+function u(C){if(!otty)print C;else system(sprintf("printf \\\\%o",C))}
+
+### FIXME a bit
+function G(R,Z){
+   Z="head -n1|od -An -vtu1|tr -Cs 0123456789 \"[ *]\"|sed \"s/^ *//;s/ *$//\"|grep ^";
+   if(un~/./){
+      R=un;un="";return R}
+   if(!itty)
+      return getline>0?$0:-1;
+   if(NF)
+      return H()
+   
+   R=(Z|getline>0)?H():-1;
+   close(Z);
+   return R}
+
+function H(R){R=$1;sub("^[0-9]+$","");sub("^[0-9]+ ","");return R}
+function U(C){un=C}
+
+function A(M){print me ": " M|"cat>&2";exit 1}'
+}
+
+: 'pxem command functions' && {
+awkscript="$awkscript"'
+function p(){while(!E())o()}
+function o(){E()||u(X())}
+function n(I,q,D,l){if(!E()){q=X();l=length(q);for(I=1;I<=l;)u((D=substr(q,I++,1))~"[0-9]"?D+48:45)}}
+function i(){P(G())}
+function _(M,C,Z,Y){
+   M="._: Not a decimal integer input";
+   C=G();
+   Z=1;
+   for(;;){
+      if(47<C&&C<58)
+         break;
+      if(C~"^4[35]$"){
+         Z=44-C;
+         C=G();
+         break}
+      if((8<C&&C<14)||C==32){
+         C=G();
+         continue}
+      A(M)}
+   if(C<48||C>57)
+      A(M);
+   for(;47<C&&C<58;C=G())
+      Y=Y (C-48);
+      U(C);
+      P(Z*Y)}
+function c(){E()||P(T())}
+function s(){E()||X()}
+function v(I,j,V){I=0;for(j=K()-1;I<j;){V=S[k,I];S[k,I++]=S[k,j];S[k,j--]=V;}}
+function r(){if(!E()){if(rposonly&&T()<=0)A(".r: Undefined against non-positive item");P(int(rand()*X()))}}
+function w(){return E()||X()}
+function x(Q){if(!J())return 1;Q=X();return Q<X()}
+function y(Q){if(!J())return 1;Q=X();return Q>X()}
+function z(){return!J()||X()-X()}
+function t(){E()||h[k]=X()}
+function m(){k in h&&P(h[k])}
+function d(I,j){delete h[k--];for(j=S[k];I<S[k+1];j++>S[k]++)S[k,j]=S[k+1,+I++]}
+function b(a,j,l){if(J())P(a?X()+a*X():X()*X());S[k,K()-1]*=1-2*(a<0)*(T()<0)}}
+function q(a,j,l){if(J()){j=X();l=X();if(0==j*l)A((a?".%":".$")": Zero division");P(int(a?j>l?j%l:l%j:j>l?j/l:l%j))}}
+'
+}
+
+: 'generate main routine' && {
+fnameprog="$(printf %s "${1##*/}" | compile)"
+awkscript="$awkscript$(printf %s "$fnameprog" | grep -v '#')" 
+reqfn="$(
+  printf %s "$fnameprog" |
+  grep '#' |
+  tr -d '# \n'
+)"
+}
+
+: 'plz check iff e and f are required' && {
+
+test -f "$1" || test -c "$1" || test -p "$1" && {
+  test -r "$1" || {
+    printf %s\\n "${0##*/}: $1: Permission denied"
+    exit 1
+  }
+}
+
+
+: 'e cmd to generate subroutine' &&
+case "$reqfn" in (*e*)
+contprog="$(cat "$1" | compile content)"
+awkscript="$awkscript$(printf %s "$contprog" | grep -v '#')" 
+printf %s\\n "$contprog";
+reqfn="$reqfn$(
+  printf %s "$contprog" |
+  grep '#' |
+  tr -d '# \n'
+)"
+;;esac
+
+: 'f cmd' &&
+case "$reqfn" in (*f*)
+awkscript="${awkscript}function f(){$(
+  cat "$1" |
+  od -A n -t u1 -v |
+  tr -Cs 0123456789 '[\n*]' |
+  grep . |
+  awk '$0=NR " " $0;' |
+  sort -k 1nr,1 |
+  sed 's/^[0-9]* \(.*\)$/P(\1);/'
+)}"
+;;esac
+
+# finally we are executing awk script.
+
+#
+# required vars for awk.
+#   me. program name.
+#
+#   otty. 1 iff stdout is terminal.
+#         1. output by myself.
+#         0. leave final output to external.
+#
+#   itty. 1 iff stdin is terminal.
+#         1. call getchar()-like by myself.
+#
+#         0. let external to parse input.
+#
+#   seed. for srand().
+#
+#   rposonly. .r command option.
+#             1. let it be defined for >0 only.
+#             0. .r does "push int(rand()*pop())" for every value.
+
+seed=
+case "$reqfn" in (*r*)
+  seed="$(
+    test -c /dev/urandom&&test -r /dev/urandom &&
+    od -A n -v -t d4 -N4 /dev/urandom ||
+    (ps -Ao pid,etime,pcpu,vsz;date) |
+    od -A n -v -t u4 |
+    tr -Cs 0123456789 '[\n*]' |
+    grep . | tail -n 42 |
+    sed 's/.*\(.\{8\}\)$/\1/' |
+    awk -v a=-2147483648 '{a+=$0;}END{print a;}'
+  )"
+;;esac
+
+### NOTE! LISTEN WHAT!
+### system("") is alt for fflush()!
+### good for i/o commands.
+
+case "$reqfn" in (*[i_]*)
+  # XXX. captive way of inputting?
+  # WHAT. XXX. is it impossible without TEMPORARY FILE FOR SIGNAL HANDLING?
+  # what. when filename is XX.z.d.a.i and input is from od, then it terminates automatically.
+  # But if .iXX.z.d.a.i, you need to enter EOF by yourself.
+  if ! : test -t 0; then
+    awk -v seed="$seed" -v otty=1 -v itty=1 "$awkscript"
+  else
+    # input here
+    od -A n -v -t u1 | tr -Cs 0123456789 '[\n*]' | grep . |
+    # actual interpreter here
+    awk -v seed="$seed" -v otty=0 -v itty=0 "$awkscript" |
+    # outputter
+    awk -v q="'" -v ORS='' -v sep='' '
+      BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
+      # 4*50=200. 200+7+1+2=210.
+      NR%50==1{print sep "printf " q;sep=q "\n";}
+      {print c[$0];}
+      END{if(sep)print q "\n";}
+    ' |
+    # i hate xargs.
+    sh -s
+  fi
+;;(*)
+  # actual interpreter here
+  awk -v seed="$seed" -v otty=0 "$awkscript" |
+  # outputter
+  awk -v q="'" -v ORS='' -v sep='' '
+    BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
+    # 4*50=200. 200+7+1+2=210.
+    NR%50==1{print sep "printf " q;sep=q "\n";}
+    {print c[$0];}
+    END{if(sep)print sep;}
+  ' |
+  # i hate xargs.
+  sh -s
+;;esac
