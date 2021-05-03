@@ -363,14 +363,14 @@ s/!()/b(0)/
 s/$()/q(0)/
 s/%()/q(1)/
 ' | {
-  echo 'S[k]=0;for(label="@";;){'
+  echo 'for(label="@";;){'
   cat
   echo '}'
 }
 
 } # compile()
 
-! : debug && {
+(! : debug) && {
 
 while IFS= read -r fname; do
   printf %s\\n "$fname"
@@ -393,7 +393,6 @@ exit $?
 
 # main I think
 
-: prelude && {
 #
 # k>=0. global. id of VM.
 # S. global stack. [k] or [k,i] where
@@ -422,7 +421,7 @@ exit $?
 # random var names; to avoid sharing name with functions.
 # GAWK is the good example that same namespace.
 #
-awkscript='BEGIN{if(+seed)srand(seed)}
+src='BEGIN{if(+seed)srand(seed)}
 function P(D){S[k,K()]=D;S[k]++}
 function E(){return !+K()}
 function J(){return K()>1}
@@ -430,14 +429,14 @@ function K(){return S[k]}
 function T(){return S[k,K()-1]}
 function X(R){R=T();S[k]--;return R}
 
-function u(C){if(!otty)print C;else system(sprintf("printf \\\\%o",C))}
+function u(C){if(!isint)print C;else system(sprintf("printf \\\\%o",C))}
 
-### FIXME a bit
+### FIXME a lot
 function G(R,Z){
    Z="head -n1|od -An -vtu1|tr -Cs 0123456789 \"[ *]\"|sed \"s/^ *//;s/ *$//\"|grep ^";
    if(un~/./){
       R=un;un="";return R}
-   if(!itty)
+   if(!isint)
       return getline>0?$0:-1;
    if(NF)
       return H()
@@ -449,14 +448,10 @@ function G(R,Z){
 function H(R){R=$1;sub("^[0-9]+$","");sub("^[0-9]+ ","");return R}
 function U(C){un=C}
 
-function A(M){print me ": " M|"cat>&2";exit 1}'
-}
-
-: 'pxem command functions' && {
-awkscript="$awkscript"'
+function A(M){print me ": " M|"cat>&2";exit 1}
 function p(){while(!E())o()}
 function o(){E()||u(X())}
-function n(I,q,D,l){if(!E()){q=X();l=length(q);for(I=1;I<=l;)u((D=substr(q,I++,1))~"[0-9]"?D+48:45)}}
+function n(I,V,D,l){if(!E()){V=X();l=length(V);for(I=1;I<=l;)u((D=substr(V,I++,1))~"[0-9]"?D+48:45)}}
 function i(){P(G())}
 function _(M,C,Z,Y){
    M="._: Not a decimal integer input";
@@ -481,64 +476,34 @@ function _(M,C,Z,Y){
       P(Z*Y)}
 function c(){E()||P(T())}
 function s(){E()||X()}
-function v(I,j,V){I=0;for(j=K()-1;I<j;){V=S[k,I];S[k,I++]=S[k,j];S[k,j--]=V;}}
+function v(I,j,V){I=0;for(j=K()-1;I<j;S[k,j--]=V){V=S[k,I];S[k,I++]=S[k,j]}}
 function r(){if(!E()){if(rposonly&&T()<=0)A(".r: Undefined against non-positive item");P(int(rand()*X()))}}
 function w(){return E()||X()}
-function x(Q){if(!J())return 1;Q=X();return Q<X()}
-function y(Q){if(!J())return 1;Q=X();return Q>X()}
+function x(Q,V){V=!J();if(!V){Q=X();V=Q<X()}return V}
+function y(Q,V){V=!J();if(!V){Q=X();V=Q>X()}return V}
 function z(){return!J()||X()-X()}
 function t(){E()||h[k]=X()}
 function m(){k in h&&P(h[k])}
-function d(I,j){delete h[k--];for(j=S[k];I<S[k+1];j++>S[k]++)S[k,j]=S[k+1,+I++]}
-function b(a,j,l){if(J())P(a?X()+a*X():X()*X());S[k,K()-1]*=1-2*(a<0)*(T()<0)}}
-function q(a,j,l){if(J()){j=X();l=X();if(0==j*l)A((a?".%":".$")": Zero division");P(int(a?j>l?j%l:l%j:j>l?j/l:l%j))}}
-'
-}
-
-: 'generate main routine' && {
-fnameprog="$(printf %s "${1##*/}" | compile)"
-awkscript="$awkscript$(printf %s "$fnameprog" | grep -v '#')" 
-reqfn="$(
-  printf %s "$fnameprog" |
-  grep '#' |
-  tr -d '# \n'
-)"
-}
-
-: 'plz check iff e and f are required' && {
-
-test -f "$1" || test -c "$1" || test -p "$1" && {
-  test -r "$1" || {
-    printf %s\\n "${0##*/}: $1: Permission denied"
-    exit 1
-  }
-}
-
-
-: 'e cmd to generate subroutine' &&
-case "$reqfn" in (*e*)
-contprog="$(cat "$1" | compile content)"
-awkscript="$awkscript$(printf %s "$contprog" | grep -v '#')" 
-printf %s\\n "$contprog";
-reqfn="$reqfn$(
-  printf %s "$contprog" |
-  grep '#' |
-  tr -d '# \n'
-)"
-;;esac
-
-: 'f cmd' &&
-case "$reqfn" in (*f*)
-awkscript="${awkscript}function f(){$(
-  cat "$1" |
-  od -A n -t u1 -v |
-  tr -Cs 0123456789 '[\n*]' |
-  grep . |
-  awk '$0=NR " " $0;' |
-  sort -k 1nr,1 |
-  sed 's/^[0-9]* \(.*\)$/P(\1);/'
-)}"
-;;esac
+function b(a,j,l){if(J()){P(a?X()+a*X():X()*X());S[k,K()-1]*=1-2*(a<0)*(T()<0)}}
+function q(a,j,l){if(J()){j=X();l=X();if(!(j*l))A((a?".%":".$")": Zero division");P(int(a?j>l?j%l:l%j:j>l?j/l:l%j))}}
+BEGIN{
+   S[k=0]=0;'"$(printf %s "${1##*/}"|compile)"'}
+function f(){
+    '"$(
+      cat "$1"|
+      od -An -vtu1|
+      tr -C \[0-9] '[\n*]'|
+      grep .|
+      sed =|
+      sed 'N;s/\n//'|
+      sort -rnk1|
+      cut -d' ' -f2|
+      sed 's/.*/P(&)/')"'}
+function e(I,j,label,nest){
+   j--;for(k++;++j<(S[k]=S[k-1]);S[k,j]=S[k-1,j]);
+   '"$(cat "$1"|compile)"'
+   delete h[k--];
+   for(I=-1;++I<S[k+1];S[k,S[k]+I]=S[k+1,I]);S[k]+=S[k+1]}'
 
 # finally we are executing awk script.
 
@@ -546,14 +511,7 @@ awkscript="${awkscript}function f(){$(
 # required vars for awk.
 #   me. program name.
 #
-#   otty. 1 iff stdout is terminal.
-#         1. output by myself.
-#         0. leave final output to external.
-#
-#   itty. 1 iff stdin is terminal.
-#         1. call getchar()-like by myself.
-#
-#         0. let external to parse input.
+#   isint. 0 or 1. is interactive mode?
 #
 #   seed. for srand().
 #
@@ -561,19 +519,25 @@ awkscript="${awkscript}function f(){$(
 #             1. let it be defined for >0 only.
 #             0. .r does "push int(rand()*pop())" for every value.
 
-seed=
-case "$reqfn" in (*r*)
-  seed="$(
-    test -c /dev/urandom&&test -r /dev/urandom &&
-    od -A n -v -t d4 -N4 /dev/urandom ||
-    (ps -Ao pid,etime,pcpu,vsz;date) |
-    od -A n -v -t u4 |
-    tr -Cs 0123456789 '[\n*]' |
-    grep . | tail -n 42 |
-    sed 's/.*\(.\{8\}\)$/\1/' |
-    awk -v a=-2147483648 '{a+=$0;}END{print a;}'
-  )"
-;;esac
+seed="$(
+ test -c /dev/urandom&&test -r /dev/urandom &&
+ od -A n -v -t d4 -N4 /dev/urandom ||
+ (ps -Ao pid,etime,pcpu,vsz;date) |
+ od -A n -v -t u4 |
+ tr -Cs 0123456789 '[\n*]' |
+ grep . | tail -n 42 |
+ sed 's/.*\(.\{8\}\)$/\1/' |
+ awk -v a=-2147483648 '{a+=$0;}END{print a;}'
+)"
+
+od -An -vtu1|tr -C \[0-9] '[\n*]'|grep .|
+awk -v seed="$seed" -v isint=0 -v rposonly=0 "$src"|
+awk '$0="\\\\" sprintf("%o",$0)'|
+xargs -Ix printf x
+
+exit 0
+
+# TODO
 
 ### NOTE! LISTEN WHAT!
 ### system("") is alt for fflush()!
@@ -585,12 +549,12 @@ case "$reqfn" in (*[i_]*)
   # what. when filename is XX.z.d.a.i and input is from od, then it terminates automatically.
   # But if .iXX.z.d.a.i, you need to enter EOF by yourself.
   if ! : test -t 0; then
-    awk -v seed="$seed" -v otty=1 -v itty=1 "$awkscript"
+    awk -v seed="$seed" -v otty=1 -v itty=1 "$src"
   else
     # input here
     od -A n -v -t u1 | tr -Cs 0123456789 '[\n*]' | grep . |
     # actual interpreter here
-    awk -v seed="$seed" -v otty=0 -v itty=0 "$awkscript" |
+    awk -v seed="$seed" -v otty=0 -v itty=0 "$src" |
     # outputter
     awk -v q="'" -v ORS='' -v sep='' '
       BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
@@ -604,7 +568,7 @@ case "$reqfn" in (*[i_]*)
   fi
 ;;(*)
   # actual interpreter here
-  awk -v seed="$seed" -v otty=0 "$awkscript" |
+  awk -v seed="$seed" -v otty=0 "$src" |
   # outputter
   awk -v q="'" -v ORS='' -v sep='' '
     BEGIN{for(i=0;i<256;i++)c[i]=sprintf("\\%o",i);}
