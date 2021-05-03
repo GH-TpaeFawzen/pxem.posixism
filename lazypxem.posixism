@@ -499,7 +499,7 @@ function f(){
       sort -rnk1|
       cut -d' ' -f2|
       sed 's/.*/P(&)/')"'}
-function e(I,j,label,nest){
+function e(I,j,label){
    j--;for(k++;++j<(S[k]=S[k-1]);S[k,j]=S[k-1,j]);
    '"$(cat "$1"|compile)"'
    delete h[k--];
