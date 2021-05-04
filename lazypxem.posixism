@@ -495,7 +495,7 @@ function f(){
       tr -C \[0-9] '[\n*]'|
       grep .|
       sed =|
-      sed 'N;s/\n//'|
+      sed 'N;s/\n/ /'|
       sort -rnk1|
       cut -d' ' -f2|
       sed 's/.*/P(&)/')"'}
