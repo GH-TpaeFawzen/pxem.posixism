@@ -357,11 +357,11 @@ s/A$/A("loop not matching")}/
 # let arithmetics name be those whom are not Pxem commands
 #
 sed '
-s/+()/b(1)/
-s/-()/b(-1)/
-s/!()/b(0)/
-s/$()/q(0)/
-s/%()/q(1)/
+s/+()/b(1)/g
+s/-()/b(-1)/g
+s/!()/b(0)/g
+s/$()/q(0)/g
+s/%()/q(1)/g
 ' | {
   echo 'for(label="@";;){'
   cat
