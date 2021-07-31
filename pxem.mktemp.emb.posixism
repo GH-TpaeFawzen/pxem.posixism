@@ -1,0 +1,473 @@
+#!/bin/sh
+
+# pxem.mktemp.emb.posixism. in-code Pxem interpreter.
+#
+# Features.
+# - Compatible with nk.'s intended spefification
+# - Byte-unit character
+# - No slash nor null for filename
+# - Stream-oriented I/O
+#
+# Written by. TpaeFawzen.
+# Final update. 2021.07.31 UTC+9.
+# License. Creative Commons Zero v1.0.
+
+# get POSIXly surpriseless environment
+set -eu
+umask 0077 # not 0022; as for mktemp
+export LC_ALL=C
+type getconf >/dev/null 2>&1 &&
+type command >/dev/null 2>&1 &&
+export PATH="$(command -p getconf PATH 2>/dev/null)${PATH+:}${PATH-}"
+export UNIX_STD=2003 # for HP-UX
+export POSIXLY_CORRECT=1 # for GNU
+
+# PUT YOUR PXEM SOURCE HERE
+FILENAME=
+CONTENT=
+
+# checking filename
+if
+   printf %s\\n "$FILENAME" |
+   grep -q -E \
+      '(^|[^\\])\\(0|00|000|0000)([^0-8]|$)' 
+then
+   echo Null character in filename 1>&2
+   exit 1
+fi
+
+if
+   printf %s\\n "$FILENAME" |
+   grep -q -E \
+      '(/|(^|[^\\])\\(57|057|0057)([^0-8]|$))'
+then
+   echo Slash in filename 1>&2
+   exit 1
+fi
+
+# count program
+for x in "$FILENAME" "$CONTENT" "$FILENAME$CONTENT"; do
+   printf %b "$x" | wc -c 1>&2
+done
+
+type mktemp >/dev/null 2>&1 || {
+   mktemp()(
+      set -C
+      dirtmp="${TMPDIR:-}"
+      case "$dirtmp" in ('')
+         dirtmp=/tmp
+      ;;(/)
+         dirtmp=/.
+      ;;(*)
+         dirtmp="${dirtmp%/}"
+      ;;esac
+      for fname in $(
+      (
+         if [ -r /dev/urandom ] && [ -c /dev/urandom ]; then
+            od -A n -t d4 -N 4 -v /dev/urandom
+         else
+            (ps -A -o pid,etime,pcpu,vsz; date) |
+            od -A n -t u4 -v |
+            tr -Cs 0123456789 '[\n*]' |
+            grep . |
+            tail -n 42 |
+            sed 's/^.*\(.\{8\}\)$/\1/' |
+            awk -v a=-2147483648 '
+            {a+=$0;}END{print a}'
+         fi
+      ) |
+      awk '{
+         srand($0);
+         fnameset="abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_";
+         L=length(fnameset);
+         for(i=1;i<=10;i++){
+            for(j=1;j<=14;j++)
+               printf substr(fnameset,int(rand()*L),1);
+            print "";
+         }
+      }'
+      ); do
+         : > "$dirtmp/$fname" &&
+         printf %s\\n "$dirtmp/$fname" &&
+         return 0
+      done
+      echo "mktemp: failed to generate a temporary file" 1>&2
+      return 1
+   )
+}
+
+clean_tmpfname(){
+   set -- ${1:-} $?
+   trap '' EXIT HUP INT QUIT PIPE ALRM TERM
+   rm -f "$tmpfname"
+   trap - EXIT HUP INT QUIT PIPE ALRM TERM
+   exit $1
+}
+tmpfname="$(mktemp)" # for awk script
+trap clean_tmpfname EXIT HUP INT QUIT PIPE ALRM TERM
+
+cat >>"$tmpfname" <<'CONFIG'
+BEGIN{
+   USE_BC=0;
+   BREAK_LOOP_WHEN_INSUFFICIENT=0;
+   ABORT_BROKEN_LOOP=1;
+   ABORT_ILLEGAL_INTEGER=1;
+}
+CONFIG
+
+compile(){
+   printf %b "$1" |
+   od -A n -t u1 -v |
+   tr -Cs 0123456789\\n '[\n*]' |
+   grep . |
+   # organize literal string
+   # recognize valid tokens
+   awk -v DOT=46 '
+   BEGIN{
+      lsize=0;
+      cmd[112]=cmd[80]="p";
+      cmd[111]=cmd[79]="o";
+      cmd[110]=cmd[78]="n";
+      cmd[105]=cmd[73]="i";
+      cmd[95]="_";
+      cmd[99]=cmd[67]="c";
+      cmd[115]=cmd[83]="s";
+      cmd[118]=cmd[86]="v";
+      cmd[102]=cmd[70]="f";
+      cmd[101]=cmd[69]="e";
+      cmd[114]=cmd[82]="r";
+      cmd[119]=cmd[87]="w";
+      cmd[120]=cmd[88]="x";
+      cmd[121]=cmd[89]="y";
+      cmd[122]=cmd[90]="z";
+      cmd[97]=cmd[65]="a";
+      cmd[116]=cmd[84]="t";
+      cmd[109]=cmd[77]="m";
+      cmd[100]=cmd[68]="d";
+      cmd[43]="+";
+      cmd[45]="-";
+      cmd[33]="!";
+      cmd[36]="$";
+      cmd[37]="%";
+      DOT=46;
+   }
+   {
+      previous=literal[lsize];
+      literal[++lsize]=$0;
+      if(previous==DOT&&$0 in cmd){
+         for(lsize-=2;lsize;lsize--)
+            printf"literal %d\n",literal[lsize];
+         print cmd[$0];
+      }
+   }
+   END{
+      for(;lsize;lsize--)
+         printf"literal %d\n",literal[lsize];
+   }' |
+   # which of wxyz does a match with?
+   # e.g. w xxx a to w xxx aw
+   # if a does not match, then s/a/A/ and ignore further
+   # so A indicates broken a
+   awk -v nestlv=0 '
+   /^[wxyz]$/{
+      matchwith[++nestlv]=$0;
+      print;next;
+   }
+   /^a$/{
+      if(nestlv==0){
+         print"A";exit 0;
+      }
+      if(nestlv>0){
+         printf"a%c\n",matchwith[nestlv--];
+         next;
+      }
+   }
+   1;' |
+   # add labels
+   #
+   # IMITATING GOTO STATEMENTS WITH FOLLOWING AWK SNIPPET:
+   # for(;;){
+   #   if(label=="xxx"){xxx}
+   #   else if(label=="xxx"){xxx}
+   #   ...
+   #   else{xxx} # Tried to go to nonexisting label
+   # }
+   #
+   # initially ""
+   # here are how goto-ing:
+   # wxyz and getting in the loop: s/$/,/
+   # wxyz and ignoring the loop:   s/$/@/
+   # awaxwyaz and continuing the loop: s/,@*$/,/
+   # awaxayaz and breaking the loop:   s/,@*$/@/
+   # A: to completely different one
+   # OBTW broken loop: goto nowhere
+   awk '
+   BEGIN{label=""} # no label needed for first part
+   1;
+   /^[wxyz]$/{
+      nestlv++;
+      sub("$",",",label);
+      print "label " label;
+   }
+   /^a[wxyz]$/{
+      nestlv--;
+      sub(",@*$","@",label);
+      print "label " label;
+   }' |
+   # now translate commands to appropriate ones
+   sed '
+   /^label /{
+      s//}else if(label=="/
+      s/$/"){/
+      b
+   }
+   /^literal /{
+      s//push(/
+      s/$/)/
+      b
+   }
+   s/^p$/while(!empty())putchar(pop())/
+   s/^o$/if(!empty())putchar(pop())/
+   s/^n$/if(!empty())putinteger(pop())/
+   s/^i$/push(getchar())/
+   s/^_$/push(getinteger())/
+   s/^c$/if(!empty())push(top())/
+   s/^s$/if(!empty())pop()/
+   s/^v$/reverse()/
+   s/^f$/for(i=1;i<=content_size;i++)push(content[i])/
+   s/^e$/subroutine()/
+   s/^r$/if(!empty())push(int(rand()*pop()))/
+   s/^[wxyz]$/if(loop_cond("&"))sub("$",",",label);else sub("$","@",label)/
+   s/^a\([wxyz]\)$/if(loop_cond("\1"))sub(",@*$",",",label);else sub(",@*$","@",label)/
+   s/^A$/label="?";continue/
+   s/^t$/if(!empty())toheap(pop())/
+   s/^m$/if(heap())push(fromheap())/
+   s/^d$/break/
+   s/^[+!$%-]$/if(size()>=2)arithmetic("&")/
+   ' |
+   # headers and footers
+   (
+   echo 'for(label="";;){if(label==""){'
+   cat
+   echo 'break}else if(ABORT_BROKEN_LOOP)abort_loop(label)}'
+   )
+}
+
+{
+   echo 'function main(label){stack[id=0]=0'
+   compile "$FILENAME"
+   echo '}function subroutine(label,s){
+      s=size();stack[++id]=0
+      for(i=0;i<s;i++)
+         push(stack[id-1,i])'
+   compile "$CONTENT"
+   echo 's=size();delete _heap[id--]
+      for(i=0;i<s;i++)
+         push(stack[id+1,i])}'
+} >>"$tmpfname"
+
+# cat "$tmpfname"; exit
+
+: test || {
+for x in '' 'hi.pxe' A.A.A o .wzjso.j.x.z.w.a .x .y akeo.d.w.d.e.a; do
+   echo "$x"
+   compile "$x"
+   echo
+done
+}
+
+cat >>"$tmpfname" <<'FUNCTIONS'
+function abort(msg){
+   print msg|"cat 1>&2";
+   exit 1;
+}
+
+# stack[id] is size
+# stack[id,i] has items, 0-indexed
+# stack manipulation
+function empty(){return stack[id]==0}
+function size(){return stack[id]}
+function push(_i){stack[id,stack[id]++]=_i}
+function pop(){return stack[id,--stack[id]]}
+function top(){return stack[id,stack[id]-1]}
+function reverse(_i,_j){
+   for(_i=0;_i<stack[id]/2;_i++){
+      _j=stack[id,_i];
+      stack[id,_i]=stack[id,stack[id]-1-_i];
+      stack[id,stack[id]-1-_i]=_j;
+   }
+}
+
+# heap
+# must delete when returning from subroutine
+function heap(){return id in _heap}
+function fromheap(){return _heap[id]}
+function toheap(_i){_heap[id]=_i}
+
+# io
+# just streaming io now
+# also just byte sequence now
+# but maybe interactive io in future
+function putchar(_i){
+   printf "\\\\%o\n",_i
+}
+function putinteger(_i,_c){
+   if(_i<0){
+      putchar(45); # sign
+      _i*=-1;
+   }
+   for(_c=1;_c<=length(_i);_c++){
+      putchar(substr(_i,_c,1)+48); # assuming ASCII
+   }
+}
+function getchar(_r){
+   if(0 in _ungetbuf){
+      _r=_ungetbuf[0];
+      delete _ungetbuf[0];
+      return _r;
+   }
+   if((getline _r)<=0)
+      return -1;
+   return _r;
+}
+function ungetchar(_i){_ungetbuf[0]=_i}
+function isspace(_i){return (9<=_i&&_i<=14)||_i==32}
+# algorithm same as printf("%d",&i);
+# 
+function getinteger(_sign,_i,_r){
+   for(;(_i=getchar())!=-1&&isspace(_i);)
+      ;
+   _sign="";
+   if(_i==43||_i==45){
+      if(_i==45) _sign="-";
+      _i=getchar();
+   }
+   if(_i<48||57<_i){
+      if(ABORT_ILLEGAL_INTEGER)
+         abort("._: not an integer input");
+      else{
+         # dunno if regular to ungetchar() sign and things or not
+         # OKAY lets not
+         ungetchar(_i);
+         return 0;
+      }
+   }
+   # time for digits
+   _r=_sign;
+   for(;48<=_i&&_i<=57;_i=getchar()){
+      _r=_r "" (_i-48);
+   }
+   ungetchar(_i);
+   return _r;
+}
+
+# conditional
+function abort_loop(label){
+   if(label=="?")
+      abort(".a: missing .w, .x, .y, or .z");
+   else
+      abort("." _last_cond ": missing .a");
+}
+function loop_cond(_cond,_first,_second){
+   _last_cond=_cond;
+   if(_cond=="w"){
+      if(empty())
+         return !BREAK_LOOP_WHEN_INSUFFICIENT;
+      return pop()!=0;
+   }
+   else{
+      if(size()<2)
+         return !BREAK_LOOP_WHEN_INSUFFICIENT;
+      _first=pop();
+      _second=pop();
+      if(_cond=="x") return _first<_second;
+      if(_cond=="y") return _first>_second;
+      if(_cond=="z") return _first!=_second;
+   }
+}
+
+# why i am making this a function: AWK handles limited range of integers,
+# especially in FreeBSD; 0x7FFFFFFF is the max while 0x80000000 is min
+# OBTW AWK is to handle at least LONG signed integers, which is >= 32 bits.
+# MAYBE ASK USERS TO DECIDE WHETHER TO USE BC
+function arithmetic(_op,_i,_j,_k){
+   if(USE_BC){
+      _i=pop();_j=pop();
+      if(_i<_j){
+         _k=_i;_i=_j;_j=_k;
+      }
+      _i=sprintf("echo %s\"%c\"%s | tr \\!\\$ \\*/ | bc",_i,_op,_j);
+      _j=(_i | getline _k);
+      if(_j)
+         abort("." _op ": arithmetic failed");
+      push(_k);
+   }
+   else{
+      if(_op=="+") push(int(pop()+pop()));
+      if(_op=="!") push(int(pop()*pop()));
+      if(_op=="-"){
+         push(int(pop()-pop()));
+         if(top()<0)
+            push(int(pop()*-1));
+      }
+      if(_op~"[$%]"){
+         _i=pop();_j=pop();
+         if(_i*_j==0)
+            abort("." _op ": zero-division");
+         if(_i<_j){
+            _k=_i;_i=_j;_j=_k;
+         }
+         push(int(_op=="$"?_i/_j:_i%_j));
+      }
+   }
+}
+FUNCTIONS
+
+cat >>"$tmpfname" <<'INIT'
+NR==1{srand($0);_read_content=1;next}
+NR>=2&&_read_content{
+   if(/endc/){
+      main();exit 0;
+   }
+   content[++content_size]=$0;next;
+}
+INIT
+
+: 'obtain source' && {
+(: 1>&3) 2>/dev/null &&
+   cat "$tmpfname" 1>&3 ||
+   printf %s\\n "${0##*/} 3>FILE to obtain generated script" 1>&2
+}
+
+# finally
+(
+   # srand() seed
+   if [ -r /dev/urandom ] && [ -c /dev/urandom ]; then
+      od -A n -t d4 -v -N 4 /dev/urandom
+   else
+      (ps -A -o pid,etime,pcpu,vsz; date) |
+      od -A n -t u4 -v |
+      tr -Cs 0123456789\\n '[\n*]' |
+      grep . |
+      tail -n 42 |
+      sed 's/^.*\(.\{8\}\)/\1/' |
+      awk -v a=-2147483648 '
+      {a+=$0}END{print a}'
+   fi
+   # for .f
+   printf %b "$CONTENT" |
+   od -A n -t u1 -v |
+   tr -Cs 0123456789\\n '[\n*]'
+   echo endc
+   # finally program input
+   od -A n -t u1 -v |
+   tr -Cs 0123456789\\n '[\n*]'
+) | grep . | # as od -A n might begin with space
+awk -f "$tmpfname" | # cat;exit
+# output formatter for stream io
+awk -v M="$(getconf ARG_MAX 2>/dev/null || echo 4096)" '
+BEGIN{M/=2;M-=8} # length of "printf \n"
+length(s $0)>M{print s;s=""}
+{s=s $0}
+END{print s}' |
+xargs -I z printf z
